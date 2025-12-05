@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  telnyx-ai-rust:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telnyx_ai_service_rust
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=telnyx_ai_service=debug
+      - PORT=3000
+      - TELNYX_API_KEY=${TELNYX_API_KEY}
+      - TELNYX_CONNECTION_ID=${TELNYX_CONNECTION_ID}
+      - TELNYX_PHONE_NUMBER=${TELNYX_PHONE_NUMBER}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=claude-3-5-haiku-20241022
+      - WEBHOOK_BASE_URL=${WEBHOOK_BASE_URL}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+    restart: unless-stopped
+    networks:
+      - telnyx-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+
+networks:
+  telnyx-network:
+    driver: bridge
+
+# Para usar este docker-compose:
+# 1. Crear archivo .env con las variables de entorno
+# 2. docker-compose up -d
+# 3. Ver logs: docker-compose logs -f
+# 4. Detener: docker-compose down

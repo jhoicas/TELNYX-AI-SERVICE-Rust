@@ -1,0 +1,16 @@
+# Configuración optimizada del Cargo.toml para producción
+# Agregando perfiles de build
+
+[profile.release]
+opt-level = 3           # Máxima optimización
+lto = true              # Link-time optimization
+codegen-units = 1       # Mejor optimización, más tiempo de build
+panic = "abort"         # Más pequeño que "unwind"
+strip = true            # Remover símbolos de debug
+
+[profile.dev]
+opt-level = 0           # Sin optimización, build rápido
+debug = true            # Mantener símbolos de debug
+
+[profile.test]
+opt-level = 1           # Algo de optimización para tests más rápidos

@@ -1,0 +1,38 @@
+# Gitignore para Rust
+
+# Directorio de build
+/target/
+target/
+
+# Archivos de bloqueo
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+
+# Archivos de compilación temporales
+*.rlib
+*.rmeta
+
+# Binarios generados
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
