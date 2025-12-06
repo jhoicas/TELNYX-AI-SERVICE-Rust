@@ -40,8 +40,8 @@ chrono = { version = "0.4", features = ["serde"] }
 dashmap = "5.5"
 
 # AWS SDK for S3
-aws-config = "0.55"
-aws-sdk-s3 = "0.55"
+aws-config = "0.54"
+aws-sdk-s3 = "0.54"
 
 # Claude/Anthropic API
 futures = "0.3"
