@@ -1,16 +1,14 @@
 # 1. Etapa de Construcción (Builder)
-# Usamos la versión '1' para tener siempre el Rust más nuevo (arregla el error edition2024)
+# CAMBIO CLAVE: Usamos 'rust:1' en lugar de '1.75' para soportar edition2024
 FROM rust:1-slim-bookworm as builder
 
 WORKDIR /app
 
-# --- CORRECCIÓN CRÍTICA AQUÍ ---
-# Instalamos pkg-config y libssl-dev para poder COMPILAR las librerías de AWS/Reqwest
+# Instalamos las herramientas necesarias para compilar librerías de AWS y Reqwest
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-# -------------------------------
 
 COPY . .
 
@@ -20,7 +18,7 @@ RUN cargo build --release
 # 2. Etapa Final (Runtime)
 FROM debian:bookworm-slim
 
-# Instalamos dependencias para CORRER la app
+# Instalamos dependencias para CORRER la app (SSL y Curl)
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
