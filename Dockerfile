@@ -1,5 +1,5 @@
 # 1. Etapa de Construcción (Builder)
-FROM rust:1.75-slim-bookworm as builder
+FROM rust:1-slim-bookworm as builder
 
 WORKDIR /app
 COPY . .
