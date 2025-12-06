@@ -107,10 +107,11 @@ impl ClaudeService {
             .cloned()
             .unwrap_or_else(|| "Disculpa, ¿puedes repetir eso?".to_string());
 
+        // ✅ CORREGIDO: Agregados los {} para longitud y tokens
         info!(
-            "✅ Respuesta Claude generada",
-            length = response_text.len(),
-            tokens = message_response.usage.output_tokens,
+            "✅ Respuesta Claude generada. Longitud: {}, Tokens: {}",
+            response_text.len(),
+            message_response.usage.output_tokens,
         );
 
         Ok(self.clean_response(&response_text))

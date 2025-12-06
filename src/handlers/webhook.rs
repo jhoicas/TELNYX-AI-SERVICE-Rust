@@ -10,6 +10,7 @@ use crate::{
     models::{ClientState, SessionInfo, TranscriptionPayload},
     services::{AppState, SessionManager},
 };
+use chrono::Timelike; // ✅ Necesario para .hour()
 
 pub async fn handle_telnyx_webhook(
     State(state): State<Arc<AppState>>,
@@ -19,7 +20,8 @@ pub async fn handle_telnyx_webhook(
         .as_str()
         .unwrap_or("unknown");
 
-    info!("📨 Webhook recibido", event_type = event_type);
+    // ✅ CORREGIDO: Agregado ": {}"
+    info!("📨 Webhook recibido: {}", event_type);
 
     match event_type {
         "call.answered" => handle_call_answered(state, payload).await,
@@ -28,7 +30,8 @@ pub async fn handle_telnyx_webhook(
         "call.transcription.transcript_received" => handle_transcription(state, payload).await,
         "call.hangup" => handle_hangup(state, payload).await,
         _ => {
-            debug!("⏭️ Evento no manejado", event_type = event_type);
+            // ✅ CORREGIDO
+            debug!("⏭️ Evento no manejado: {}", event_type);
             (StatusCode::OK, Json(json!({"status": "received"})))
         }
     }
@@ -80,16 +83,18 @@ async fn handle_call_answered(
         _ => "Buenas noches, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?",
     };
 
-    info!("🔊 Reproduciendo saludo personalizado", call_control_id = &call_control_id);
+    // ✅ CORREGIDO
+    info!("🔊 Reproduciendo saludo personalizado. ID: {}", call_control_id);
 
     // Enviar saludo
     if let Err(e) = state.telnyx_service.speak(&call_control_id, greeting).await {
         error!("❌ Error reproduciendo saludo: {}", e);
     }
 
-    info!("✅ Llamada contestada y saludo enviado", 
-        nombre = &client_state.nombre,
-        telefono = &client_state.telefono
+    // ✅ CORREGIDO: Agregados place holders {}
+    info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 
+        client_state.nombre,
+        client_state.telefono
     );
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
@@ -104,91 +109,7 @@ async fn handle_speak_ended(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    info!("🎤 Iniciando transcripción después de speak", call_control_id = &call_control_id);
+    // ✅ CORREGIDO
+    info!("🎤 Iniciando transcripción después de speak. ID: {}", call_control_id);
 
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
-        error!("❌ Error iniciando transcripción: {}", e);
-    }
-
-    (StatusCode::OK, Json(json!({"status": "handled"})))
-}
-
-async fn handle_playback_ended(
-    state: Arc<AppState>,
-    payload: serde_json::Value,
-) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
-        Some(id) => id.to_string(),
-        None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
-    };
-
-    info!("🔊 Playback finalizado, iniciando transcripción", call_control_id = &call_control_id);
-
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
-        error!("❌ Error iniciando transcripción: {}", e);
-    }
-
-    (StatusCode::OK, Json(json!({"status": "handled"})))
-}
-
-async fn handle_transcription(
-    state: Arc<AppState>,
-    payload: serde_json::Value,
-) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
-        Some(id) => id.to_string(),
-        None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
-    };
-
-    let transcript = payload["data"]["transcript"].as_str().unwrap_or("");
-    let is_final = payload["data"]["is_final"].as_bool().unwrap_or(false);
-
-    if !is_final || transcript.is_empty() {
-        return (StatusCode::OK, Json(json!({"status": "buffering"})));
-    }
-
-    info!("📝 Transcripción recibida", transcript = transcript, call_control_id = &call_control_id);
-
-    // Obtener sesión y generar respuesta
-    if let Some(mut session_ref) = state.sessions.get_mut(&call_control_id) {
-        let context = SessionManager::get_conversation_context(&session_ref);
-
-        if let Ok(response) = state.claude_service
-            .generate_response(
-                transcript,
-                &session_ref.nombre,
-                if context.is_empty() { None } else { Some(&context) },
-            )
-            .await
-        {
-            SessionManager::add_to_history(&mut session_ref, response.clone());
-
-            info!("🤖 Respuesta Claude generada", response = &response);
-
-            // Enviar respuesta
-            if let Err(e) = state.telnyx_service.speak(&call_control_id, &response).await {
-                error!("❌ Error reproduciendo respuesta: {}", e);
-            }
-        }
-    } else {
-        error!("⚠️ Sesión no encontrada para call_control_id: {}", call_control_id);
-    }
-
-    (StatusCode::OK, Json(json!({"status": "handled"})))
-}
-
-async fn handle_hangup(
-    state: Arc<AppState>,
-    payload: serde_json::Value,
-) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
-        Some(id) => id.to_string(),
-        None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
-    };
-
-    state.sessions.remove(&call_control_id);
-
-    info!("📵 Llamada finalizada", call_control_id = &call_control_id);
-
-    (StatusCode::OK, Json(json!({"status": "handled"})))
-}
+    if let Err(e)

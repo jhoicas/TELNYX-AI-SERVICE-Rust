@@ -14,7 +14,7 @@ impl S3Service {
         let bucket = std::env::var("S3_BUCKET")
             .unwrap_or_else(|_| "telnyx-ai-service".to_string());
 
-        info!("✅ S3 Service inicializado", bucket = bucket);
+        info!("✅ S3 Service inicializado. Bucket: {}", bucket);
 
         Ok(Self { client, bucket })
     }
@@ -39,8 +39,8 @@ impl S3Service {
             self.bucket, key
         );
 
-        info!("✅ Audio subido a S3", url = url);
-
+        info!("✅ Audio subido a S3. URL: {}", url);
+        
         Ok(url)
     }
 

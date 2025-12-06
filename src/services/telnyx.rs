@@ -97,10 +97,11 @@ impl TelnyxService {
         let telnyx_response: TelnyxCallResponse = response.json().await?;
         let data = telnyx_response.data;
 
+        // ✅ CORREGIDO: Agregados los {}
         info!(
-            "📞 Llamada iniciada exitosamente",
-            call_control_id = data.call_control_id,
-            to = to,
+            "📞 Llamada iniciada exitosamente. ID: {}, To: {}",
+            data.call_control_id,
+            to,
         );
 
         Ok(CallResponse {
@@ -142,7 +143,8 @@ impl TelnyxService {
             return Err(anyhow::anyhow!("Failed to speak"));
         }
 
-        info!("✅ TTS speak enviado correctamente", call_control_id = call_control_id);
+        // ✅ CORREGIDO
+        info!("✅ TTS speak enviado correctamente. ID: {}", call_control_id);
         Ok(())
     }
 
@@ -179,7 +181,8 @@ impl TelnyxService {
             return Err(anyhow::anyhow!("Failed to play audio"));
         }
 
-        info!("✅ Playback iniciado", call_control_id = call_control_id);
+        // ✅ CORREGIDO
+        info!("✅ Playback iniciado. ID: {}", call_control_id);
         Ok(())
     }
 
@@ -213,7 +216,8 @@ impl TelnyxService {
             return Err(anyhow::anyhow!("Failed to start transcription"));
         }
 
-        debug!("🎤 Transcripción iniciada", call_control_id = call_control_id);
+        // ✅ CORREGIDO
+        debug!("🎤 Transcripción iniciada. ID: {}", call_control_id);
         Ok(())
     }
 
@@ -229,7 +233,8 @@ impl TelnyxService {
             return Err(anyhow::anyhow!("Failed to hangup"));
         }
 
-        info!("📵 Llamada colgada", call_control_id = call_control_id);
+        // ✅ CORREGIDO
+        info!("📵 Llamada colgada. ID: {}", call_control_id);
         Ok(())
     }
 }
