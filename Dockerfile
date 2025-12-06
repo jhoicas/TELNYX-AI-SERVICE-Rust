@@ -1,38 +1,37 @@
-# Use official Rust runtime as base image
+# 1. Etapa de Construcción (Builder)
 FROM rust:1.75-slim-bookworm as builder
 
-# Set working directory
 WORKDIR /app
-
-# Copy project files
 COPY . .
 
-# Build the application
+# Construimos la app en modo release
 RUN cargo build --release
 
-# Final stage - minimal runtime image
+# 2. Etapa Final (Runtime)
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
+# --- CORRECCIÓN AQUÍ ---
+# Instalamos 'curl' (para el healthcheck) y 'libssl-dev' (para conexiones HTTPS)
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
+# -----------------------
 
-# Copy binary from builder
 COPY --from=builder /app/target/release/telnyx_ai_service /usr/local/bin/telnyx_ai_service
 
-# Set working directory
 WORKDIR /app
 
-# Copy .env.example (user will override with .env in docker-compose)
-COPY .env.example .env.example
+# OJO: No copiamos .env.example porque usaremos las variables de DigitalOcean
+# COPY .env.example .env.example 
 
-# Expose port
+# Exponemos el puerto 3000 (Importante configurar esto en DigitalOcean también)
 EXPOSE 3000
+ENV PORT=3000
 
-# Health check
+# Health check (Ahora sí funcionará porque instalamos curl)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:3000/api/health || exit 1
 
-# Run the application
 CMD ["telnyx_ai_service"]
