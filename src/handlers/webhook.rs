@@ -127,12 +127,8 @@ async fn handle_speak_ended(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    // ✅ Log corregido
-    info!("🎤 Iniciando transcripción después de speak. ID: {}", call_control_id);
-
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
-        error!("❌ Error iniciando transcripción: {}", e);
-    }
+    // 📝 Transcripción ya se inicia en call.answer, aquí solo registramos el evento
+    info!("🎤 Evento speak_ended recibido. ID: {}", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
@@ -148,11 +144,8 @@ async fn handle_playback_started(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    info!("🔊 Playback started, asegurando transcripción activa. ID: {}", call_control_id);
-
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
-        error!("❌ Error iniciando transcripción (playback.started): {}", e);
-    }
+    // 📝 Ya iniciamos transcripción en handle_call_answered, así que solo registramos que playback comenzó
+    info!("🔊 Playback iniciado. ID: {}", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
@@ -168,12 +161,8 @@ async fn handle_playback_ended(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    // ✅ Log corregido
-    info!("🔊 Playback finalizado, iniciando transcripción. ID: {}", call_control_id);
-
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
-        error!("❌ Error iniciando transcripción: {}", e);
-    }
+    // 📝 Playback terminó; transcripción ya debería estar activa
+    info!("🔊 Playback finalizado. ID: {}", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }

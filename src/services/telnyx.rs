@@ -31,8 +31,18 @@ struct TelnyxCallResponse {
 #[derive(Debug, Serialize, Deserialize)]
 struct TelnyxCallData {
     call_control_id: String,
-    call_id: String,
-    status: String,
+    #[serde(default)]
+    call_id: Option<String>,
+    #[serde(default)]
+    call_leg_id: Option<String>,
+    #[serde(default)]
+    call_session_id: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    is_alive: Option<bool>,
+    #[serde(default)]
+    record_type: Option<String>,
 }
 
 impl TelnyxService {
@@ -102,17 +112,23 @@ impl TelnyxService {
             })?;
         let data = telnyx_response.data;
 
-        // ✅ CORREGIDO: Agregados los {}
+        // ✅ Usar call_id si existe, sino usar call_leg_id o call_session_id
+        let call_id = data.call_id
+            .or_else(|| data.call_leg_id.clone())
+            .or_else(|| data.call_session_id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
         info!(
-            "📞 Llamada iniciada exitosamente. ID: {}, To: {}",
+            "📞 Llamada iniciada exitosamente. ID: {}, Call Leg ID: {:?}, To: {}",
             data.call_control_id,
+            data.call_leg_id,
             to,
         );
 
         Ok(CallResponse {
             call_control_id: data.call_control_id,
-            call_id: data.call_id,
-            status: data.status,
+            call_id,
+            status: data.status.unwrap_or_else(|| "initiated".to_string()),
             timestamp: chrono::Utc::now(),
         })
     }
