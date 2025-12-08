@@ -226,8 +226,10 @@ impl TelnyxService {
         }
 
         let payload = TranscriptionPayload {
-            transcription_engine: "A".to_string(),
-            language: "es".to_string(),
+            // Telnyx docs recommend "ai" or "google"; we use "ai" for better accuracy
+            transcription_engine: "ai".to_string(),
+            // Use locale for Spanish to improve recognition
+            language: "es-ES".to_string(),
             webhook_url: format!("{}/webhook/telnyx", webhook_url),
         };
 
@@ -238,14 +240,14 @@ impl TelnyxService {
             .send()
             .await?;
 
+        let body = response.text().await.unwrap_or_default();
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            error!("❌ Error iniciando transcripción: {}", error_text);
+            error!("❌ Error iniciando transcripción: {}", body);
             return Err(anyhow::anyhow!("Failed to start transcription"));
         }
 
-        // ✅ CORREGIDO
-        debug!("🎤 Transcripción iniciada. ID: {}", call_control_id);
+        // Log full body for visibility (Telnyx may return warnings even on 200)
+        debug!("🎤 Transcripción iniciada. ID: {} | body: {}", call_control_id, body);
         Ok(())
     }
 

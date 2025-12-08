@@ -105,6 +105,8 @@ async fn handle_call_answered(
     // Iniciar transcripción inmediatamente tras lanzar el saludo (para “escuchar” al usuario antes de que termine el audio)
     if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
         error!("❌ Error iniciando transcripción temprana: {}", e);
+    } else {
+        debug!("🎤 Transcripción solicitada en call.answered para {}", call_control_id);
     }
 
     // ✅ Log corregido
