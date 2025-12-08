@@ -156,7 +156,8 @@ impl TelnyxService {
         #[derive(Serialize)]
         struct PlaybackPayload {
             audio_url: String,
-            loop: i32,
+            #[serde(rename = "loop")]
+            r#loop: i32,
             overlay: bool,
             target_legs: String,
             client_state: Option<String>,
@@ -168,7 +169,7 @@ impl TelnyxService {
 
         let payload = PlaybackPayload {
             audio_url: audio_url.to_string(),
-            loop: 1,
+            r#loop: 1,
             overlay: false,
             target_legs: "self".to_string(),
             client_state: Some(client_state_b64),
