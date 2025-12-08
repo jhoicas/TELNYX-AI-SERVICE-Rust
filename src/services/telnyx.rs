@@ -156,16 +156,22 @@ impl TelnyxService {
         #[derive(Serialize)]
         struct PlaybackPayload {
             audio_url: String,
-            loop_value: i32,
+            loop: i32,
             overlay: bool,
             target_legs: String,
+            client_state: Option<String>,
         }
+
+        // Preparar client_state para permitir barge-in/interrupción si es necesario
+        let client_state_json = serde_json::json!({ "interruptible": true });
+        let client_state_b64 = base64::engine::general_purpose::STANDARD.encode(serde_json::to_string(&client_state_json)?);
 
         let payload = PlaybackPayload {
             audio_url: audio_url.to_string(),
-            loop_value: 1,
+            loop: 1,
             overlay: false,
             target_legs: "self".to_string(),
+            client_state: Some(client_state_b64),
         };
 
         let response = self.client
@@ -181,8 +187,8 @@ impl TelnyxService {
             return Err(anyhow::anyhow!("Failed to play audio"));
         }
 
-        // ✅ CORREGIDO
-        info!("✅ Playback iniciado. ID: {}", call_control_id);
+        // ✅ CORREGIDO - loguear status para diagnóstico
+        info!("✅ Playback iniciado. ID: {}, status: {}", call_control_id, response.status());
         Ok(())
     }
 
