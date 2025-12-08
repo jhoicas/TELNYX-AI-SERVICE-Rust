@@ -30,7 +30,8 @@ pub async fn handle_telnyx_webhook(
         "call.transcription.transcript_received" => handle_transcription(state, payload).await,
         "call.hangup" => handle_hangup(state, payload).await,
         _ => {
-            debug!("⏭️ Evento no manejado: {}", event_type);
+            // Log completo del payload para diagnóstico (cuando no encontramos `meta.event_type`)
+            debug!("⏭️ Evento no manejado: {} - payload: {}", event_type, payload);
             (StatusCode::OK, Json(json!({"status": "received"})))
         }
     }
