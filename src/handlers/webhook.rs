@@ -83,11 +83,22 @@ async fn handle_call_answered(
     };
 
     // ✅ Log corregido
-    info!("🔊 Reproduciendo saludo personalizado. ID: {}", call_control_id);
+    info!("🔊 Generando saludo con ElevenLabs. ID: {}", call_control_id);
 
-    // Enviar saludo
-    if let Err(e) = state.telnyx_service.speak(&call_control_id, greeting).await {
-        error!("❌ Error reproduciendo saludo: {}", e);
+    // Generar audio con ElevenLabs, subir a S3 y reproducir
+    match state.elevenlabs_service.text_to_speech(greeting).await {
+        Ok(audio_bytes) => {
+            let audio_key = format!("audio/greeting_{}.mp3", call_control_id);
+            match state.s3_service.upload_audio(&audio_key, audio_bytes).await {
+                Ok(audio_url) => {
+                    if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &audio_url).await {
+                        error!("❌ Error reproduciendo audio: {}", e);
+                    }
+                }
+                Err(e) => error!("❌ Error subiendo audio a S3: {}", e),
+            }
+        }
+        Err(e) => error!("❌ Error generando audio con ElevenLabs: {}", e),
     }
 
     // ✅ Log corregido
@@ -173,9 +184,23 @@ async fn handle_transcription(
             // ✅ Log corregido
             info!("🤖 Respuesta Claude generada: {}", response);
 
-            // Enviar respuesta
-            if let Err(e) = state.telnyx_service.speak(&call_control_id, &response).await {
-                error!("❌ Error reproduciendo respuesta: {}", e);
+            // Generar audio con ElevenLabs, subir a S3 y reproducir
+            match state.elevenlabs_service.text_to_speech(&response).await {
+                Ok(audio_bytes) => {
+                    let audio_key = format!("audio/response_{}_{}.mp3", 
+                        call_control_id, 
+                        chrono::Utc::now().timestamp()
+                    );
+                    match state.s3_service.upload_audio(&audio_key, audio_bytes).await {
+                        Ok(audio_url) => {
+                            if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &audio_url).await {
+                                error!("❌ Error reproduciendo audio: {}", e);
+                            }
+                        }
+                        Err(e) => error!("❌ Error subiendo audio a S3: {}", e),
+                    }
+                }
+                Err(e) => error!("❌ Error generando audio con ElevenLabs: {}", e),
             }
         }
     } else {
