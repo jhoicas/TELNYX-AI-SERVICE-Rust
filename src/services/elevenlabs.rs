@@ -11,6 +11,7 @@ pub struct ElevenLabsService {
     client: Client,
 }
 
+
 #[derive(Debug, Serialize)]
 struct TextToSpeechRequest {
     text: String,
