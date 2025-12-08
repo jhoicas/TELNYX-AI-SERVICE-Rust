@@ -94,7 +94,12 @@ impl TelnyxService {
             return Err(anyhow::anyhow!("Failed to initiate call"));
         }
 
-        let telnyx_response: TelnyxCallResponse = response.json().await?;
+        let body = response.text().await.unwrap_or_default();
+        let telnyx_response: TelnyxCallResponse = serde_json::from_str(&body)
+            .map_err(|e| {
+                error!("❌ Error decodificando respuesta de Telnyx: {} | body: {}", e, body);
+                anyhow::anyhow!("Failed to parse Telnyx response: {}", e)
+            })?;
         let data = telnyx_response.data;
 
         // ✅ CORREGIDO: Agregados los {}

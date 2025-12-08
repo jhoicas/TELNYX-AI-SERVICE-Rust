@@ -27,8 +27,11 @@ pub async fn handle_telnyx_webhook(
     match event_type {
         "call.answered" => handle_call_answered(state, payload).await,
         "call.speak.ended" => handle_speak_ended(state, payload).await,
+        "call.playback.started" => handle_playback_started(state, payload).await,
         "call.playback.ended" => handle_playback_ended(state, payload).await,
         "call.transcription.transcript_received" => handle_transcription(state, payload).await,
+        "call.transcription.transcribed" => handle_transcription(state, payload).await,
+        "call.transcription.partial" => handle_transcription_partial(state, payload).await,
         "call.hangup" => handle_hangup(state, payload).await,
         _ => {
             // Log completo del payload para diagnóstico (cuando no encontramos `meta.event_type`)
@@ -134,6 +137,26 @@ async fn handle_speak_ended(
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
 
+async fn handle_playback_started(
+    state: Arc<AppState>,
+    payload: serde_json::Value,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let call_control_id = match payload["data"]["call_control_id"].as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+    {
+        Some(id) => id.to_string(),
+        None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
+    };
+
+    info!("🔊 Playback started, asegurando transcripción activa. ID: {}", call_control_id);
+
+    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
+        error!("❌ Error iniciando transcripción (playback.started): {}", e);
+    }
+
+    (StatusCode::OK, Json(json!({"status": "handled"})))
+}
+
 async fn handle_playback_ended(
     state: Arc<AppState>,
     payload: serde_json::Value,
@@ -166,8 +189,12 @@ async fn handle_transcription(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    let transcript = payload["data"]["transcript"].as_str().unwrap_or("");
-    let is_final = payload["data"]["is_final"].as_bool().unwrap_or(false);
+    let transcript = payload["data"]["transcript"].as_str()
+        .or_else(|| payload["data"]["payload"]["transcript"].as_str())
+        .unwrap_or("");
+    let is_final = payload["data"]["is_final"].as_bool()
+        .or_else(|| payload["data"]["payload"]["is_final"].as_bool())
+        .unwrap_or(false);
 
     if !is_final || transcript.is_empty() {
         return (StatusCode::OK, Json(json!({"status": "buffering"})));
@@ -224,6 +251,20 @@ async fn handle_transcription(
     }
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
+}
+
+async fn handle_transcription_partial(
+    _state: Arc<AppState>,
+    payload: serde_json::Value,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let call_control_id = payload["data"]["call_control_id"].as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+        .unwrap_or("(sin_id)");
+    let transcript = payload["data"]["transcript"].as_str()
+        .or_else(|| payload["data"]["payload"]["transcript"].as_str())
+        .unwrap_or("");
+    debug!("🟡 Parcial recibido ({}): {}", call_control_id, transcript);
+    (StatusCode::OK, Json(json!({"status": "partial"})))
 }
 
 async fn handle_hangup(
