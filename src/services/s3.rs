@@ -31,18 +31,23 @@ impl S3Service {
         data: Vec<u8>,
     ) -> anyhow::Result<String> {
 
+        // Log upload details
+        info!("⬆️ S3 put_object request - bucket: {}, key: {}, size_bytes: {}", self.bucket, key, data.len());
+
         let put_req = self.client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
             .body(aws_sdk_s3::primitives::ByteStream::from(data))
-            .content_type("audio/mpeg")
-            .acl(aws_sdk_s3::types::ObjectCannedAcl::PublicRead);
+            .content_type("audio/mpeg");
 
         match put_req.send().await {
             Ok(_) => {}
             Err(e) => {
-                error!("❌ S3 put_object failed: {:#}", e);
+                // Log both Display and Debug to surface detailed SDK error info
+                error!("❌ S3 put_object failed (display): {}", e);
+                error!("❌ S3 put_object failed (debug): {:?}", e);
+
                 return Err(anyhow::anyhow!("S3 put_object failed: {}", e));
             }
         }
