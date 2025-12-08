@@ -81,29 +81,22 @@ async fn handle_call_answered(
 
     // Generar saludo
     let hour = chrono::Local::now().hour();
-    let greeting = match hour {
-        5..=11 => "Buenos días, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?",
-        12..=18 => "Buenas tardes, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?",
-        _ => "Buenas noches, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?",
+    let greeting_key = match hour {
+        5..=11 => "morning",
+        12..=18 => "afternoon",
+        _ => "evening",
     };
 
     // ✅ Log corregido
     info!("🔊 Generando saludo con ElevenLabs. ID: {}", call_control_id);
 
-    // Generar audio con ElevenLabs, subir a S3 y reproducir
-    match state.elevenlabs_service.text_to_speech(greeting).await {
-        Ok(audio_bytes) => {
-            let audio_key = format!("audio/greeting_{}.mp3", call_control_id);
-            match state.s3_service.upload_audio(&audio_key, audio_bytes).await {
-                Ok(audio_url) => {
-                    if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &audio_url).await {
-                        error!("❌ Error reproduciendo audio: {}", e);
-                    }
-                }
-                Err(e) => error!("❌ Error subiendo audio a S3: {}", e),
-            }
+    // Usar audio precalculado; si no existe, se omite sin bloquear la llamada
+    if let Some(url) = state.greeting_urls.get(greeting_key) {
+        if let Err(e) = state.telnyx_service.play_audio(&call_control_id, url).await {
+            error!("❌ Error reproduciendo audio: {}", e);
         }
-        Err(e) => error!("❌ Error generando audio con ElevenLabs: {}", e),
+    } else {
+        error!("⚠️ Greeting no precalculado para clave: {}", greeting_key);
     }
 
     // ✅ Log corregido
@@ -180,6 +173,13 @@ async fn handle_transcription(
 
     // Obtener sesión y generar respuesta
     if let Some(mut session_ref) = state.sessions.get_mut(&call_control_id) {
+        // Reproducir respuesta corta pre-generada mientras se prepara la respuesta larga
+        if let Some(url) = state.quick_reply_urls.get("processing") {
+            if let Err(e) = state.telnyx_service.play_audio(&call_control_id, url).await {
+                error!("❌ Error reproduciendo quick-reply: {}", e);
+            }
+        }
+
         let context = SessionManager::get_conversation_context(&session_ref);
 
         if let Ok(response) = state.claude_service
