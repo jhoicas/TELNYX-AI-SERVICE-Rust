@@ -16,8 +16,9 @@ pub async fn handle_telnyx_webhook(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let event_type = payload["meta"]["event_type"]
+    let event_type = payload["data"]["event_type"]
         .as_str()
+        .or_else(|| payload["meta"]["event_type"].as_str())
         .unwrap_or("unknown");
 
     // ✅ Log corregido
@@ -41,12 +42,15 @@ async fn handle_call_answered(
     state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
+    let call_control_id = match payload["data"]["call_control_id"].as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+    {
         Some(id) => id.to_string(),
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    let client_state_base64 = payload["data"]["client_state"].as_str();
+    let client_state_base64 = payload["data"]["client_state"].as_str()
+        .or_else(|| payload["data"]["payload"]["client_state"].as_str());
     
     let mut client_state = ClientState {
         nombre: "Cliente".to_string(),
@@ -115,7 +119,9 @@ async fn handle_speak_ended(
     state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
+    let call_control_id = match payload["data"]["call_control_id"].as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+    {
         Some(id) => id.to_string(),
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
@@ -134,7 +140,9 @@ async fn handle_playback_ended(
     state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
+    let call_control_id = match payload["data"]["call_control_id"].as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+    {
         Some(id) => id.to_string(),
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
@@ -153,7 +161,9 @@ async fn handle_transcription(
     state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let call_control_id = match payload["data"]["call_control_id"].as_str() {
+    let call_control_id = match payload["data"]["call_control_id"].as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+    {
         Some(id) => id.to_string(),
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
