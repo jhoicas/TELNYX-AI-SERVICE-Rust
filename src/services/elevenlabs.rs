@@ -1,6 +1,7 @@
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::{info, error};
+use base64::Engine;
 
 #[derive(Clone)]
 pub struct ElevenLabsService {
