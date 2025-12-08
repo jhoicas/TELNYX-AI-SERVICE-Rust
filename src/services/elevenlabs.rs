@@ -52,13 +52,14 @@ impl ElevenLabsService {
     pub async fn text_to_speech(&self, text: &str) -> anyhow::Result<Vec<u8>> {
         info!("🎤 Generando audio con ElevenLabs: '{}'", text);
 
+        // Ajustes más naturales (ligeramente más estable y con un toque de estilo)
         let request = TextToSpeechRequest {
             text: text.to_string(),
             model_id: "eleven_multilingual_v2".to_string(),
             voice_settings: VoiceSettings {
-                stability: 0.5,
-                similarity_boost: 0.75,
-                style: 0.0,
+                stability: 0.35,
+                similarity_boost: 0.85,
+                style: 0.2,
                 use_speaker_boost: true,
             },
         };

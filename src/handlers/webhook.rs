@@ -99,6 +99,11 @@ async fn handle_call_answered(
         error!("⚠️ Greeting no precalculado para clave: {}", greeting_key);
     }
 
+    // Iniciar transcripción inmediatamente tras lanzar el saludo (para “escuchar” al usuario antes de que termine el audio)
+    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
+        error!("❌ Error iniciando transcripción temprana: {}", e);
+    }
+
     // ✅ Log corregido
     info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 
         client_state.nombre,
