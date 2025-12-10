@@ -233,6 +233,8 @@ impl TelnyxService {
             webhook_url: format!("{}/webhook/telnyx", webhook_url),
         };
 
+        info!("🎤 [CALL:{}] Iniciando transcripción - motor: google, idioma: es", call_control_id);
+
         let response = self.client
             .post(format!("{}/calls/{}/actions/transcription_start", self.base_url, call_control_id))
             .bearer_auth(&self.api_key)
@@ -243,12 +245,13 @@ impl TelnyxService {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         if !status.is_success() {
-            error!("❌ Error iniciando transcripción: {}", body);
+            error!("❌ [CALL:{}] Error iniciando transcripción (status {}): {}", call_control_id, status, body);
             return Err(anyhow::anyhow!("Failed to start transcription"));
         }
 
         // Log full body for visibility (Telnyx may return warnings even on 200)
-        debug!("🎤 Transcripción iniciada. ID: {} | body: {}", call_control_id, body);
+        info!("✅ [CALL:{}] Transcripción iniciada - esperando audio del usuario", call_control_id);
+        debug!("🎤 Detalles respuesta: {}", body);
         Ok(())
     }
 

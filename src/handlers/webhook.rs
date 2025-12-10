@@ -27,6 +27,11 @@ pub async fn handle_telnyx_webhook(
         .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
         .unwrap_or("unknown");
 
+    // Log con full payload para transcripción
+    if event_type.contains("transcription") {
+        info!("📡 [CALL:{}] Webhook completo (transcription event): {}", call_id, serde_json::to_string(&payload).unwrap_or_default());
+    }
+
     info!("📨 [CALL:{}] Webhook recibido: {}", call_id, event_type);
 
     match event_type {
@@ -194,7 +199,10 @@ async fn handle_transcription(
         .or_else(|| payload["data"]["payload"]["is_final"].as_bool())
         .unwrap_or(false);
 
+    info!("📝 [CALL:{}] Evento transcripción - final: {}, texto: '{}'", call_control_id, is_final, transcript);
+
     if !is_final || transcript.is_empty() {
+        info!("⏳ [CALL:{}] Ignorando (no final o vacío)", call_control_id);
         return (StatusCode::OK, Json(json!({"status": "buffering"})));
     }
 
@@ -296,7 +304,7 @@ async fn handle_transcription_partial(
     let transcript = payload["data"]["transcript"].as_str()
         .or_else(|| payload["data"]["payload"]["transcript"].as_str())
         .unwrap_or("");
-    debug!("🟡 [CALL:{}] Parcial recibido: {}", call_control_id, transcript);
+    info!("🟡 [CALL:{}] Transcripción parcial: '{}'", call_control_id, transcript);
     (StatusCode::OK, Json(json!({"status": "partial"})))
 }
 
