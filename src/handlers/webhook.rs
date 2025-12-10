@@ -90,16 +90,15 @@ async fn handle_call_answered(
         _ => "evening",
     };
 
-    // ✅ Log corregido
-    info!("🔊 Generando saludo con ElevenLabs. ID: {}", call_control_id);
+    info!("🔊 Obteniendo saludo para: {}. ID: {}", greeting_key, call_control_id);
 
-    // Usar audio precalculado; si no existe, se omite sin bloquear la llamada
-    if let Some(url) = state.greeting_urls.get(greeting_key) {
-        if let Err(e) = state.telnyx_service.play_audio(&call_control_id, url).await {
+    // Obtener o generar audio bajo demanda
+    if let Some(url) = state.get_or_generate_greeting(greeting_key).await {
+        if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
             error!("❌ Error reproduciendo audio: {}", e);
         }
     } else {
-        error!("⚠️ Greeting no precalculado para clave: {}", greeting_key);
+        error!("⚠️ No se pudo obtener saludo para: {}", greeting_key);
     }
 
     // Iniciar transcripción inmediatamente tras lanzar el saludo (para “escuchar” al usuario antes de que termine el audio)
@@ -196,9 +195,9 @@ async fn handle_transcription(
 
     // Obtener sesión y generar respuesta
     if let Some(mut session_ref) = state.sessions.get_mut(&call_control_id) {
-        // Reproducir respuesta corta pre-generada mientras se prepara la respuesta larga
-        if let Some(url) = state.quick_reply_urls.get("processing") {
-            if let Err(e) = state.telnyx_service.play_audio(&call_control_id, url).await {
+        // Reproducir respuesta corta bajo demanda mientras se prepara la respuesta larga
+        if let Some(url) = state.get_or_generate_quick_reply("processing").await {
+            if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
                 error!("❌ Error reproduciendo quick-reply: {}", e);
             }
         }
