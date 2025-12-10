@@ -48,9 +48,9 @@ async fn prewarm_audio(
     s3: &S3Service,
 ) -> (HashMap<String, String>, HashMap<String, String>) {
     let greetings = vec![
-        ("morning", "Buenos días, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?"),
-        ("afternoon", "Buenas tardes, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?"),
-        ("evening", "Buenas noches, bienvenido a Clínica Veterinaria LA WANDA Y MACARENA, hablas con María. ¿Con quién tengo el gusto?"),
+        ("morning", "Buenos dias, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?"),
+        ("afternoon", "Buenas tardes, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?"),
+        ("evening", "Buenas noches, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?"),
     ];
 
     let quick_replies = vec![
@@ -60,20 +60,38 @@ async fn prewarm_audio(
     let mut greeting_urls = HashMap::new();
     let mut quick_reply_urls = HashMap::new();
 
+    // Generar saludos, reutilizando si ya existen en S3
     for (key, text) in greetings {
-        if let Ok(bytes) = eleven.text_to_speech(text).await {
-            let s3_key = format!("audio/greeting_{}.mp3", key);
-            if let Ok(url) = s3.upload_audio(&s3_key, bytes).await {
-                greeting_urls.insert(key.to_string(), url);
+        let s3_key = format!("audio/greeting_{}.mp3", key);
+        
+        // Primero verificar si el archivo ya existe en S3
+        if s3.object_exists(&s3_key).await {
+            let url = s3.get_url(&s3_key).await;
+            info!("♻️ Reutilizando saludo existente: {} -> {}", key, url);
+            greeting_urls.insert(key.to_string(), url);
+        } else {
+            // Si no existe, generar y subir
+            if let Ok(bytes) = eleven.text_to_speech(text).await {
+                if let Ok(url) = s3.upload_audio(&s3_key, bytes).await {
+                    greeting_urls.insert(key.to_string(), url);
+                }
             }
         }
     }
 
+    // Generar respuestas rapidas, reutilizando si ya existen
     for (key, text) in quick_replies {
-        if let Ok(bytes) = eleven.text_to_speech(text).await {
-            let s3_key = format!("audio/quick_{}.mp3", key);
-            if let Ok(url) = s3.upload_audio(&s3_key, bytes).await {
-                quick_reply_urls.insert(key.to_string(), url);
+        let s3_key = format!("audio/quick_{}.mp3", key);
+        
+        if s3.object_exists(&s3_key).await {
+            let url = s3.get_url(&s3_key).await;
+            info!("♻️ Reutilizando respuesta rapida existente: {} -> {}", key, url);
+            quick_reply_urls.insert(key.to_string(), url);
+        } else {
+            if let Ok(bytes) = eleven.text_to_speech(text).await {
+                if let Ok(url) = s3.upload_audio(&s3_key, bytes).await {
+                    quick_reply_urls.insert(key.to_string(), url);
+                }
             }
         }
     }

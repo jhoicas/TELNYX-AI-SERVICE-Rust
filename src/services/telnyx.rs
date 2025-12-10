@@ -226,10 +226,10 @@ impl TelnyxService {
         }
 
         let payload = TranscriptionPayload {
-            // Telnyx docs recommend "ai" or "google"; we use "ai" for better accuracy
-            transcription_engine: "ai".to_string(),
-            // Use locale for Spanish to improve recognition
-            language: "es-ES".to_string(),
+            // Telnyx accepts "google" or similar standard engines
+            transcription_engine: "google".to_string(),
+            // Simple language code without special characters; es for Spanish
+            language: "es".to_string(),
             webhook_url: format!("{}/webhook/telnyx", webhook_url),
         };
 

@@ -69,4 +69,17 @@ impl S3Service {
             self.bucket, self.region, key
         )
     }
+
+    pub async fn object_exists(&self, key: &str) -> bool {
+        match self.client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+        {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
 }
