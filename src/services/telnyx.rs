@@ -223,6 +223,8 @@ impl TelnyxService {
             transcription_engine: String,
             language: String,
             webhook_url: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transcription_engine_options: Option<serde_json::Value>,
         }
 
         // Permitir alternar motor e idioma vía env vars
@@ -231,13 +233,24 @@ impl TelnyxService {
         let language = std::env::var("TELNYX_TRANSCRIPTION_LANG")
             .unwrap_or_else(|_| "es".to_string());
 
+        // Opciones de Deepgram para reducir latencia (endpoint_silence_ms)
+        let engine_options = if engine == "deepgram" {
+            Some(serde_json::json!({
+                "endpointing": 300  // Milisegundos de silencio antes de finalizar (default: 1000-2000)
+            }))
+        } else {
+            None
+        };
+
         let payload = TranscriptionPayload {
             transcription_engine: engine.clone(),
             language: language.clone(),
             webhook_url: format!("{}/webhook/telnyx", webhook_url),
+            transcription_engine_options: engine_options,
         };
 
-        info!("🎤 [CALL:{}] Iniciando transcripción - motor: {}, idioma: {}", call_control_id, engine, language);
+        info!("🎤 [CALL:{}] Iniciando transcripción - motor: {}, idioma: {}, opciones: {:?}", 
+            call_control_id, engine, language, payload.transcription_engine_options);
 
         let response = self.client
             .post(format!("{}/calls/{}/actions/transcription_start", self.base_url, call_control_id))
