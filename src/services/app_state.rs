@@ -38,7 +38,7 @@ impl AppState {
             total_calls: std::sync::atomic::AtomicU64::new(0),
         }
     }
-}
+
     pub async fn get_or_generate_greeting(&self, greeting_key: &str) -> Option<String> {
         let text = match greeting_key {
             "morning" => "Buenos dias, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?",
