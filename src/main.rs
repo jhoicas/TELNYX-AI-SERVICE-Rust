@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber;
 
-use crate::handlers::{call, webhook};
+use crate::handlers::{call, webhook, test};
 use crate::services::AppState;
 
 #[tokio::main]
@@ -46,6 +46,9 @@ async fn main() {
         .route("/api/call/batch", post(call::batch_calls))
         .route("/api/sessions/stats", get(call::session_stats))
         .route("/api/health", get(health_check))
+        
+        // Test routes
+        .route("/api/test/claude", post(test::test_claude))
         
         // Webhook routes
         .route("/webhook/telnyx", post(webhook::handle_telnyx_webhook))

@@ -86,6 +86,9 @@ impl ClaudeService {
             ],
         };
 
+        info!("🤖 [CLAUDE] Enviando request a modelo: {} (max_tokens: {}, temp: {})", self.model, request.max_tokens, request.temperature);
+        info!("🤖 [CLAUDE] Prompt para {}: '{}'", nombre, short_prompt);
+
         let response = self.client
             .post("https://api.anthropic.com/v1/messages")
             .bearer_auth(&self.api_key)
@@ -94,9 +97,10 @@ impl ClaudeService {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("❌ Error generando respuesta Claude: {}", error_text);
-            return Err(anyhow::anyhow!("Failed to generate response"));
+            error!("❌ [CLAUDE] Error {} generando respuesta: {}", status, error_text);
+            return Err(anyhow::anyhow!("Claude API failed with status {}", status));
         }
 
         let message_response: MessageResponse = response.json().await?;
@@ -107,14 +111,20 @@ impl ClaudeService {
             .cloned()
             .unwrap_or_else(|| "Disculpa, ¿puedes repetir eso?".to_string());
 
-        // ✅ CORREGIDO: Agregados los {} para longitud y tokens
+        let cleaned = self.clean_response(&response_text);
+        
         info!(
-            "✅ Respuesta Claude generada. Longitud: {}, Tokens: {}",
-            response_text.len(),
+            "✅ [CLAUDE] Respuesta generada para {}. Modelo: {}, Tokens in/out: {}/{}, Chars: {} -> {}",
+            nombre,
+            self.model,
+            message_response.usage.input_tokens,
             message_response.usage.output_tokens,
+            response_text.len(),
+            cleaned.len()
         );
+        info!("💬 [CLAUDE] Respuesta final: '{}'", cleaned);
 
-        Ok(self.clean_response(&response_text))
+        Ok(cleaned)
     }
 
     fn clean_response(&self, text: &str) -> String {

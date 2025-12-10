@@ -21,8 +21,13 @@ pub async fn handle_telnyx_webhook(
         .or_else(|| payload["meta"]["event_type"].as_str())
         .unwrap_or("unknown");
 
-    // ✅ Log corregido
-    info!("📨 Webhook recibido: {}", event_type);
+    // Extraer call_control_id para tracking consistente
+    let call_id = payload["data"]["call_control_id"]
+        .as_str()
+        .or_else(|| payload["data"]["payload"]["call_control_id"].as_str())
+        .unwrap_or("unknown");
+
+    info!("📨 [CALL:{}] Webhook recibido: {}", call_id, event_type);
 
     match event_type {
         "call.answered" => handle_call_answered(state, payload).await,
@@ -129,7 +134,7 @@ async fn handle_speak_ended(
     };
 
     // 📝 Transcripción ya se inicia en call.answer, aquí solo registramos el evento
-    info!("🎤 Evento speak_ended recibido. ID: {}", call_control_id);
+    info!("🎤 [CALL:{}] Evento speak_ended recibido", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
@@ -146,7 +151,7 @@ async fn handle_playback_started(
     };
 
     // 📝 Ya iniciamos transcripción en handle_call_answered, así que solo registramos que playback comenzó
-    info!("🔊 Playback iniciado. ID: {}", call_control_id);
+    info!("▶️ [CALL:{}] Playback iniciado", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
@@ -163,7 +168,7 @@ async fn handle_playback_ended(
     };
 
     // 📝 Playback terminó; transcripción ya debería estar activa
-    info!("🔊 Playback finalizado. ID: {}", call_control_id);
+    info!("⏸️ [CALL:{}] Playback finalizado", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
@@ -191,14 +196,14 @@ async fn handle_transcription(
     }
 
     // ✅ Log corregido
-    info!("📝 Transcripción recibida: '{}' (ID: {})", transcript, call_control_id);
+    info!("📝 [CALL:{}] Transcripción recibida: '{}'", call_control_id, transcript);
 
     // Obtener sesión y generar respuesta
     if let Some(mut session_ref) = state.sessions.get_mut(&call_control_id) {
         // Reproducir respuesta corta bajo demanda mientras se prepara la respuesta larga
         if let Some(url) = state.get_or_generate_quick_reply("processing").await {
             if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
-                error!("❌ Error reproduciendo quick-reply: {}", e);
+                error!("❌ [CALL:{}] Error reproduciendo quick-reply: {}", call_control_id, e);
             }
         }
 
@@ -227,17 +232,17 @@ async fn handle_transcription(
                     match state.s3_service.upload_audio(&audio_key, audio_bytes).await {
                         Ok(audio_url) => {
                             if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &audio_url).await {
-                                error!("❌ Error reproduciendo audio: {}", e);
+                                error!("❌ [CALL:{}] Error reproduciendo audio: {}", call_control_id, e);
                             }
                         }
-                        Err(e) => error!("❌ Error subiendo audio a S3: {}", e),
+                        Err(e) => error!("❌ [CALL:{}] Error subiendo audio a S3: {}", call_control_id, e),
                     }
                 }
-                Err(e) => error!("❌ Error generando audio con ElevenLabs: {}", e),
+                Err(e) => error!("❌ [CALL:{}] Error generando audio con ElevenLabs: {}", call_control_id, e),
             }
         }
     } else {
-        error!("⚠️ Sesión no encontrada para call_control_id: {}", call_control_id);
+        error!("⚠️ [CALL:{}] Sesión no encontrada", call_control_id);
     }
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
@@ -253,7 +258,7 @@ async fn handle_transcription_partial(
     let transcript = payload["data"]["transcript"].as_str()
         .or_else(|| payload["data"]["payload"]["transcript"].as_str())
         .unwrap_or("");
-    debug!("🟡 Parcial recibido ({}): {}", call_control_id, transcript);
+    debug!("🟡 [CALL:{}] Parcial recibido: {}", call_control_id, transcript);
     (StatusCode::OK, Json(json!({"status": "partial"})))
 }
 
@@ -269,7 +274,7 @@ async fn handle_hangup(
     state.sessions.remove(&call_control_id);
 
     // ✅ Log corregido
-    info!("📵 Llamada finalizada. ID: {}", call_control_id);
+    info!("☎️ [CALL:{}] Llamada finalizada", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 } 
