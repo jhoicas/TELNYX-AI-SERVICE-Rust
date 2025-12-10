@@ -57,6 +57,9 @@ async fn handle_call_answered(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
+    // Separador visual por llamada para facilitar lectura de logs
+    info!("---------------------------------------------------------------------- [CALL:{}] Inicio de llamada", call_control_id);
+
     let client_state_base64 = payload["data"]["client_state"].as_str()
         .or_else(|| payload["data"]["payload"]["client_state"].as_str());
     
