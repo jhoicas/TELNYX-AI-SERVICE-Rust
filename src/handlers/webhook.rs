@@ -39,6 +39,7 @@ pub async fn handle_telnyx_webhook(
         "call.speak.ended" => handle_speak_ended(state, payload).await,
         "call.playback.started" => handle_playback_started(state, payload).await,
         "call.playback.ended" => handle_playback_ended(state, payload).await,
+        "call.transcription" => handle_transcription(state, payload).await,
         "call.transcription.transcript_received" => handle_transcription(state, payload).await,
         "call.transcription.transcribed" => handle_transcription(state, payload).await,
         "call.transcription.partial" => handle_transcription_partial(state, payload).await,
@@ -196,9 +197,11 @@ async fn handle_transcription(
 
     let transcript = payload["data"]["transcript"].as_str()
         .or_else(|| payload["data"]["payload"]["transcript"].as_str())
+        .or_else(|| payload["data"]["payload"]["transcription_data"]["transcript"].as_str())
         .unwrap_or("");
     let is_final = payload["data"]["is_final"].as_bool()
         .or_else(|| payload["data"]["payload"]["is_final"].as_bool())
+        .or_else(|| payload["data"]["payload"]["transcription_data"]["is_final"].as_bool())
         .unwrap_or(false);
 
     info!("📝 [CALL:{}] Evento transcripción - final: {}, texto: '{}'", call_control_id, is_final, transcript);
