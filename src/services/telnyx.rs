@@ -225,15 +225,19 @@ impl TelnyxService {
             webhook_url: String,
         }
 
+        // Permitir alternar motor e idioma vía env vars
+        let engine = std::env::var("TELNYX_TRANSCRIPTION_ENGINE")
+            .unwrap_or_else(|_| "google".to_string());
+        let language = std::env::var("TELNYX_TRANSCRIPTION_LANG")
+            .unwrap_or_else(|_| "es".to_string());
+
         let payload = TranscriptionPayload {
-            // Telnyx accepts "google" or similar standard engines
-            transcription_engine: "google".to_string(),
-            // Simple language code without special characters; es for Spanish
-            language: "es".to_string(),
+            transcription_engine: engine.clone(),
+            language: language.clone(),
             webhook_url: format!("{}/webhook/telnyx", webhook_url),
         };
 
-        info!("🎤 [CALL:{}] Iniciando transcripción - motor: google, idioma: es", call_control_id);
+        info!("🎤 [CALL:{}] Iniciando transcripción - motor: {}, idioma: {}", call_control_id, engine, language);
 
         let response = self.client
             .post(format!("{}/calls/{}/actions/transcription_start", self.base_url, call_control_id))
