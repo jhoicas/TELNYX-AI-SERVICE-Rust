@@ -153,12 +153,13 @@ ESTILO (CRÍTICO):
     }
 }
 
-// Deja solo ASCII imprimible y colapsa espacios
+// Limpia caracteres de control pero preserva tildes, ñ, y puntuación
 fn sanitize_ascii(input: &str) -> String {
     let mut cleaned = String::new();
     let mut last_space = false;
     for c in input.chars() {
-        if c.is_ascii() && !c.is_control() {
+        // Permitir: letras (con tildes), números, espacios, puntuación común
+        if !c.is_control() {
             let ch = if c.is_whitespace() { ' ' } else { c };
             if ch == ' ' {
                 if !last_space {

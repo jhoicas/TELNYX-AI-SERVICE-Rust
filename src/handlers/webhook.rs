@@ -285,7 +285,8 @@ fn sanitize_plain(input: &str) -> String {
     let mut cleaned = String::new();
     let mut last_space = false;
     for c in input.chars() {
-        if c.is_ascii() && !c.is_control() {
+        // Permitir todos los caracteres excepto caracteres de control
+        if !c.is_control() {
             let ch = if c.is_whitespace() { ' ' } else { c };
             if ch == ' ' {
                 if !last_space {
