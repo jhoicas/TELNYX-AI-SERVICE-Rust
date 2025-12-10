@@ -40,14 +40,16 @@ impl AppState {
     }
 
     pub async fn get_or_generate_greeting(&self, greeting_key: &str) -> Option<String> {
+        // Versión corta del saludo (3-4 segundos) para reducir latencia inicial
         let text = match greeting_key {
-            "morning" => "Buenos dias, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?",
-            "afternoon" => "Buenas tardes, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?",
-            "evening" => "Buenas noches, bienvenido a Clinica Veterinaria LA WANDA Y MACARENA, hablas con Maria. Con quien tengo el gusto?",
+            "morning" => "Buenos días, Clínica La Wanda y Macarena. Hablas con María. ¿Con quién tengo el gusto?",
+            "afternoon" => "Buenas tardes, Clínica La Wanda y Macarena. Hablas con María. ¿Con quién tengo el gusto?",
+            "evening" => "Buenas noches, Clínica La Wanda y Macarena. Hablas con María. ¿Con quién tengo el gusto?",
             _ => return None,
         };
 
-        let s3_key = format!("audio/greeting_{}.mp3", greeting_key);
+        // Nueva clave para forzar regenerar saludo corto
+        let s3_key = format!("audio/greeting_v2_{}.mp3", greeting_key);
 
         // Verificar si ya existe en S3
         if self.s3_service.object_exists(&s3_key).await {

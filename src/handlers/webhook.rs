@@ -10,7 +10,7 @@ use crate::{
     models::ClientState, // Limpié los imports no usados para que no salgan warnings
     services::{AppState, SessionManager},
 };
-use chrono::Timelike; // ✅ Necesario para .hour()
+use chrono::{Timelike, FixedOffset, Utc}; // ✅ Necesario para .hour() y zona horaria Bogotá
 
 pub async fn handle_telnyx_webhook(
     State(state): State<Arc<AppState>>,
@@ -96,8 +96,9 @@ async fn handle_call_answered(
 
     state.sessions.insert(call_control_id.clone(), session);
 
-    // Generar saludo
-    let hour = chrono::Local::now().hour();
+    // Generar saludo usando hora de Bogotá (UTC-5)
+    let bogota_tz = FixedOffset::west_opt(5 * 3600).unwrap();
+    let hour = Utc::now().with_timezone(&bogota_tz).hour();
     let greeting_key = match hour {
         5..=11 => "morning",
         12..=18 => "afternoon",
