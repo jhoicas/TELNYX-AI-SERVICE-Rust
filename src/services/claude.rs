@@ -91,7 +91,8 @@ impl ClaudeService {
 
         let response = self.client
             .post("https://api.anthropic.com/v1/messages")
-            .bearer_auth(&self.api_key)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
             .json(&request)
             .send()
             .await?;
