@@ -116,8 +116,27 @@ async fn handle_call_answered(
         error!("⚠️ No se pudo obtener saludo para: {}", greeting_key);
     }
 
-    // 📝 La transcripción se iniciará cuando termine el playback del saludo
-    info!("🎙️ [CALL:{}] Transcripción se iniciará después de que termine el saludo", call_control_id);
+    // 🎙️ IMPORTANTE: Iniciar transcripción EN PARALELO con saludo (sin esperar a que termine)
+    let call_id_for_transcription = call_control_id.clone();
+    let telnyx_svc = state.telnyx_service.clone();
+    let session_mgr = state.sessions.clone();
+    
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Delay para que Telnyx esté listo
+        
+        // Marcar que transcripción se va a iniciar
+        if let Some(mut sess) = session_mgr.get_mut(&call_id_for_transcription) {
+            sess.transcription_started = true;
+        }
+        
+        if let Err(e) = telnyx_svc.start_transcription(&call_id_for_transcription, "deepgram", "es").await {
+            error!("❌ [CALL:{}] Error iniciando transcripción paralela: {}", call_id_for_transcription, e);
+        } else {
+            info!("✅ [CALL:{}] Transcripción iniciada EN PARALELO con saludo", call_id_for_transcription);
+        }
+    });
+
+    info!("📡 [CALL:{}] Transcripción inici\u00e1ndose en paralelo con saludo", call_control_id);
 
     // ✅ Log corregido
     info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 
