@@ -129,14 +129,14 @@ async fn handle_call_answered(
             sess.transcription_started = true;
         }
         
-        if let Err(e) = telnyx_svc.start_transcription(&call_id_for_transcription, "deepgram", "es").await {
+        if let Err(e) = telnyx_svc.start_transcription(&call_id_for_transcription).await {
             error!("❌ [CALL:{}] Error iniciando transcripción paralela: {}", call_id_for_transcription, e);
         } else {
             info!("✅ [CALL:{}] Transcripción iniciada EN PARALELO con saludo", call_id_for_transcription);
         }
     });
 
-    info!("📡 [CALL:{}] Transcripción inici\u00e1ndose en paralelo con saludo", call_control_id);
+    info!("📡 [CALL:{}] Transcripción iniciándose en paralelo con saludo", call_control_id);
 
     // ✅ Log corregido
     info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 
