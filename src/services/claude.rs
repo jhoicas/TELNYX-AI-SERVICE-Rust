@@ -129,12 +129,7 @@ impl ClaudeService {
     }
 
     fn clean_response(&self, text: &str) -> String {
-        text.trim()
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string()
+        sanitize_ascii(text)
     }
 
     fn get_system_prompt(&self) -> String {
@@ -158,4 +153,25 @@ COMO HABLAR (MUY IMPORTANTE):
 - Sé empática con las mascotas: \"ay tu gatita\", \"pobrecito tu perrito\"
 - Usa \"vos\" o \"tú\" de forma natural según el contexto".to_string()
     }
+}
+
+// Deja solo ASCII imprimible y colapsa espacios
+fn sanitize_ascii(input: &str) -> String {
+    let mut cleaned = String::new();
+    let mut last_space = false;
+    for c in input.chars() {
+        if c.is_ascii() && !c.is_control() {
+            let ch = if c.is_whitespace() { ' ' } else { c };
+            if ch == ' ' {
+                if !last_space {
+                    cleaned.push(' ');
+                    last_space = true;
+                }
+            } else {
+                cleaned.push(ch);
+                last_space = false;
+            }
+        }
+    }
+    cleaned.trim().to_string()
 }

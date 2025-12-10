@@ -198,35 +198,43 @@ async fn handle_transcription(
         return (StatusCode::OK, Json(json!({"status": "buffering"})));
     }
 
-    // ✅ Log corregido
+    // Limpieza para evitar caracteres especiales antes de enviar a Claude
+    let transcript_clean = sanitize_plain(transcript);
+
+    // Log de transcripción cruda y limpia
     info!("📝 [CALL:{}] Transcripción recibida: '{}'", call_control_id, transcript);
+    info!("🧹 [CALL:{}] Transcripción limpia: '{}'", call_control_id, transcript_clean);
 
     // Obtener sesión y generar respuesta
     if let Some(mut session_ref) = state.sessions.get_mut(&call_control_id) {
-        // Reproducir respuesta corta bajo demanda mientras se prepara la respuesta larga
-        if let Some(url) = state.get_or_generate_quick_reply("processing").await {
-            if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
-                error!("❌ [CALL:{}] Error reproduciendo quick-reply: {}", call_control_id, e);
+        let context = SessionManager::get_conversation_context(&session_ref);
+
+        // Respuesta rápida opcional mientras se procesa la final
+        if is_quick_reply_enabled() {
+            if let Some(url) = state.get_or_generate_quick_reply("processing").await {
+                if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
+                    error!("❌ [CALL:{}] Error reproduciendo quick-reply: {}", call_control_id, e);
+                }
             }
         }
 
-        let context = SessionManager::get_conversation_context(&session_ref);
-
         if let Ok(response) = state.claude_service
             .generate_response(
-                transcript,
+                &transcript_clean,
                 &session_ref.nombre,
                 if context.is_empty() { None } else { Some(&context) },
             )
             .await
         {
-            SessionManager::add_to_history(&mut session_ref, response.clone());
+            let response_clean = sanitize_plain(&response);
 
-            // ✅ Log corregido
-            info!("🤖 Respuesta Claude generada: {}", response);
+            SessionManager::add_to_history(&mut session_ref, response_clean.clone());
+
+            // Log de respuesta limpia antes de TTS
+            info!("💬 [CALL:{}] Respuesta limpia: '{}'", call_control_id, response_clean);
 
             // Generar audio con ElevenLabs, subir a S3 y reproducir
-            match state.elevenlabs_service.text_to_speech(&response).await {
+            match state.elevenlabs_service.text_to_speech(&response_clean).await {
                 Ok(audio_bytes) => {
                     let audio_key = format!("audio/response_{}_{}.mp3", 
                         call_control_id, 
@@ -249,6 +257,33 @@ async fn handle_transcription(
     }
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
+}
+
+// Deja solo caracteres ASCII imprimibles y colapsa espacios
+fn sanitize_plain(input: &str) -> String {
+    let mut cleaned = String::new();
+    let mut last_space = false;
+    for c in input.chars() {
+        if c.is_ascii() && !c.is_control() {
+            let ch = if c.is_whitespace() { ' ' } else { c };
+            if ch == ' ' {
+                if !last_space {
+                    cleaned.push(' ');
+                    last_space = true;
+                }
+            } else {
+                cleaned.push(ch);
+                last_space = false;
+            }
+        }
+    }
+    cleaned.trim().to_string()
+}
+
+fn is_quick_reply_enabled() -> bool {
+    std::env::var("QUICK_REPLY_ENABLED")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false)
 }
 
 async fn handle_transcription_partial(
