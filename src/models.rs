@@ -69,6 +69,7 @@ pub struct SessionInfo {
     pub contexto: Option<String>,
     pub created_at: DateTime<Utc>,
     pub conversation_history: Vec<String>,
+    pub transcription_started: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

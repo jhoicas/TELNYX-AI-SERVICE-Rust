@@ -16,6 +16,7 @@ impl SessionManager {
             contexto: None,
             created_at: Utc::now(),
             conversation_history: Vec::new(),
+            transcription_started: false,
         }
     }
 

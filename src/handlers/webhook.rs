@@ -106,10 +106,7 @@ async fn handle_call_answered(
 
     info!("🔊 Obteniendo saludo para: {}. ID: {}", greeting_key, call_control_id);
 
-    // ✅ Iniciar transcripción INMEDIATAMENTE (en paralelo con el saludo)
-    let transcription_result = state.telnyx_service.start_transcription(&call_control_id).await;
-
-    // Obtener o generar audio bajo demanda
+    // Obtener o generar audio bajo demanda y reproducir saludo
     if let Some(url) = state.get_or_generate_greeting(greeting_key).await {
         if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
             error!("❌ Error reproduciendo audio: {}", e);
@@ -118,12 +115,8 @@ async fn handle_call_answered(
         error!("⚠️ No se pudo obtener saludo para: {}", greeting_key);
     }
 
-    // Log del resultado de transcripción
-    if let Err(e) = transcription_result {
-        error!("❌ Error iniciando transcripción: {}", e);
-    } else {
-        info!("🎙️ [CALL:{}] Transcripción iniciada (en paralelo con saludo)", call_control_id);
-    }
+    // 📝 La transcripción se iniciará cuando termine el playback del saludo
+    info!("🎙️ [CALL:{}] Transcripción se iniciará después de que termine el saludo", call_control_id);
 
     // ✅ Log corregido
     info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 
@@ -169,7 +162,7 @@ async fn handle_playback_started(
 }
 
 async fn handle_playback_ended(
-    _state: Arc<AppState>,
+    state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let call_control_id = match payload["data"]["call_control_id"].as_str()
@@ -179,8 +172,22 @@ async fn handle_playback_ended(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    // 📝 Solo registramos; transcripción ya está activa desde call.answered
-    info!("⏸️ [CALL:{}] Playback finalizado - transcripción sigue activa", call_control_id);
+    // ✅ Iniciar transcripción SOLO la primera vez (después del saludo)
+    if let Some(mut session) = state.sessions.get_mut(&call_control_id) {
+        if !session.transcription_started {
+            info!("🎙️ [CALL:{}] Iniciando transcripción después del saludo", call_control_id);
+            if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
+                error!("❌ Error iniciando transcripción: {}", e);
+            } else {
+                session.transcription_started = true;
+                info!("✅ [CALL:{}] Transcripción iniciada - esperando audio del usuario", call_control_id);
+            }
+        } else {
+            info!("⏸️ [CALL:{}] Playback finalizado - transcripción sigue activa", call_control_id);
+        }
+    } else {
+        info!("⏸️ [CALL:{}] Playback finalizado (sesión no encontrada)", call_control_id);
+    }
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
