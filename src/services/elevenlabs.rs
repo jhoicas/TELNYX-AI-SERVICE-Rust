@@ -52,15 +52,14 @@ impl ElevenLabsService {
     pub async fn text_to_speech(&self, text: &str) -> anyhow::Result<Vec<u8>> {
         info!("🎤 Generando audio con ElevenLabs: '{}'", text);
 
-        // Ajustes más naturales y menos acelerados
-        // Puedes seguir afinando: bajar stability reduce variación, subir style añade entonación
+        // Optimizado para velocidad: modelo turbo es 2-3x más rápido
         let request = TextToSpeechRequest {
             text: text.to_string(),
-            model_id: "eleven_multilingual_v2".to_string(),
+            model_id: "eleven_turbo_v2_5".to_string(),
             voice_settings: VoiceSettings {
-                stability: 0.20,
-                similarity_boost: 0.90,
-                style: 0.15,
+                stability: 0.15,
+                similarity_boost: 0.85,
+                style: 0.10,
                 use_speaker_boost: true,
             },
         };

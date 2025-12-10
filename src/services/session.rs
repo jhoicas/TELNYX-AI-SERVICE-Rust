@@ -22,7 +22,8 @@ impl SessionManager {
 
     pub fn add_to_history(session: &mut SessionInfo, message: String) {
         session.conversation_history.push(message);
-        if session.conversation_history.len() > 10 {
+        // Mantener solo los últimos 4 mensajes (2 intercambios)
+        if session.conversation_history.len() > 4 {
             session.conversation_history.remove(0);
         }
     }
