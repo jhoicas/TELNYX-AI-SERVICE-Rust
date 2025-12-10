@@ -106,6 +106,9 @@ async fn handle_call_answered(
 
     info!("🔊 Obteniendo saludo para: {}. ID: {}", greeting_key, call_control_id);
 
+    // ✅ Iniciar transcripción INMEDIATAMENTE (en paralelo con el saludo)
+    let transcription_result = state.telnyx_service.start_transcription(&call_control_id).await;
+
     // Obtener o generar audio bajo demanda
     if let Some(url) = state.get_or_generate_greeting(greeting_key).await {
         if let Err(e) = state.telnyx_service.play_audio(&call_control_id, &url).await {
@@ -115,11 +118,11 @@ async fn handle_call_answered(
         error!("⚠️ No se pudo obtener saludo para: {}", greeting_key);
     }
 
-    // ✅ Iniciar transcripción AQUÍ una sola vez para toda la llamada
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
+    // Log del resultado de transcripción
+    if let Err(e) = transcription_result {
         error!("❌ Error iniciando transcripción: {}", e);
     } else {
-        info!("🎙️ [CALL:{}] Transcripción iniciada al responder llamada", call_control_id);
+        info!("🎙️ [CALL:{}] Transcripción iniciada (en paralelo con saludo)", call_control_id);
     }
 
     // ✅ Log corregido
