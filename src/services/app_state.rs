@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use dashmap::DashMap;
-use tracing::info;
+use tracing::{info, error};
 use crate::models::SessionInfo;
 use super::{TelnyxService, ClaudeService, S3Service, ElevenLabsService};
 
