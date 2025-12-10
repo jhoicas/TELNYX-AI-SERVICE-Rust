@@ -115,8 +115,12 @@ async fn handle_call_answered(
         error!("⚠️ No se pudo obtener saludo para: {}", greeting_key);
     }
 
-    // Transcripción se iniciará después de que termine el playback para mayor confiabilidad
-    debug!("⏳ Esperando playback para iniciar transcripción en {}", call_control_id);
+    // ✅ Iniciar transcripción AQUÍ una sola vez para toda la llamada
+    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
+        error!("❌ Error iniciando transcripción: {}", e);
+    } else {
+        info!("🎙️ [CALL:{}] Transcripción iniciada al responder llamada", call_control_id);
+    }
 
     // ✅ Log corregido
     info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 
@@ -162,7 +166,7 @@ async fn handle_playback_started(
 }
 
 async fn handle_playback_ended(
-    state: Arc<AppState>,
+    _state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let call_control_id = match payload["data"]["call_control_id"].as_str()
@@ -172,14 +176,8 @@ async fn handle_playback_ended(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    // 📝 Playback terminó; inicia transcripción ahora para capturar al usuario
-    info!("⏸️ [CALL:{}] Playback finalizado - iniciando transcripción", call_control_id);
-
-    if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
-        error!("❌ [CALL:{}] Error iniciando transcripción: {}", call_control_id, e);
-    } else {
-        info!("✅ [CALL:{}] Transcripción iniciada - esperando audio del usuario", call_control_id);
-    }
+    // 📝 Solo registramos; transcripción ya está activa desde call.answered
+    info!("⏸️ [CALL:{}] Playback finalizado - transcripción sigue activa", call_control_id);
 
     (StatusCode::OK, Json(json!({"status": "handled"})))
 }
