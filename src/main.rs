@@ -16,6 +16,7 @@ use tracing_subscriber;
 
 use crate::handlers::{call, webhook, test};
 use crate::services::AppState;
+use crate::handlers::media_stream;
 
 #[tokio::main]
 async fn main() {
@@ -52,6 +53,9 @@ async fn main() {
         
         // Webhook routes
         .route("/webhook/telnyx", post(webhook::handle_telnyx_webhook))
+        
+        // WebSocket Media Stream route
+        .route("/stream/media", axum::routing::get(media_stream::handle_media_stream))
         
         .layer(CorsLayer::permissive())
         .with_state(state);

@@ -1,0 +1,241 @@
+use axum::{
+    extract::{State, ws::{WebSocket, WebSocketUpgrade, Message}},
+    response::IntoResponse,
+};
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tracing::{info, error, warn};
+use futures_util::StreamExt;
+use base64::{engine::general_purpose::STANDARD, Engine};
+
+use crate::services::{AppState, SessionManager, DeepgramWebSocket};
+
+/// Handler para conexión WebSocket de Telnyx Media Streams
+pub async fn handle_media_stream(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+    info!("🔌 Nueva conexión Media Stream establecida");
+
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+    
+    // Esperamos el primer mensaje que contiene el call_control_id
+    let call_id = match ws_receiver.next().await {
+        Some(Ok(Message::Text(text))) => {
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(json) => {
+                    if let Some(event) = json.get("event").and_then(|e| e.as_str()) {
+                        if event == "start" {
+                            let call_id = json.get("start")
+                                .and_then(|s| s.get("call_control_id"))
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            
+                            info!("📞 [CALL:{}] Media Stream iniciado", call_id);
+                            call_id
+                        } else {
+                            warn!("⚠️ Primer mensaje no es 'start': {}", event);
+                            return;
+                        }
+                    } else {
+                        warn!("⚠️ Mensaje sin evento");
+                        return;
+                    }
+                }
+                Err(e) => {
+                    error!("❌ Error parseando mensaje inicial: {}", e);
+                    return;
+                }
+            }
+        }
+        _ => {
+            error!("❌ No se recibió mensaje inicial");
+            return;
+        }
+    };
+
+    // Crear sesión
+    let session = SessionManager::create_session(
+        call_id.clone(),
+        "Cliente".to_string(),
+        "desconocido".to_string(),
+    );
+    state.sessions.insert(call_id.clone(), session);
+
+    // Conectar a Deepgram WebSocket
+    let deepgram = DeepgramWebSocket::new();
+    let (audio_tx, mut transcript_rx) = match deepgram.connect(call_id.clone()).await {
+        Ok(channels) => channels,
+        Err(e) => {
+            error!("❌ [CALL:{}] Error conectando a Deepgram: {}", call_id, e);
+            return;
+        }
+    };
+
+    // Reproducir saludo
+    tokio::spawn({
+        let call_id = call_id.clone();
+        let state = state.clone();
+        async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            
+            let hour = chrono::Utc::now().hour();
+            let greeting_key = match hour {
+                5..=11 => "morning",
+                12..=18 => "afternoon",
+                _ => "evening",
+            };
+
+            info!("🔊 [CALL:{}] Reproduciendo saludo: {}", call_id, greeting_key);
+            
+            if let Some(url) = state.get_or_generate_greeting(greeting_key).await {
+                if let Err(e) = state.telnyx_service.play_audio(&call_id, &url).await {
+                    error!("❌ [CALL:{}] Error reproduciendo saludo: {}", call_id, e);
+                }
+            }
+        }
+    });
+
+    // Task para procesar audio de Telnyx → Deepgram
+    let call_id_audio = call_id.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = ws_receiver.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    // Parsear mensaje de Telnyx Media Stream
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if let Some(event) = json.get("event").and_then(|e| e.as_str()) {
+                            match event {
+                                "media" => {
+                                    // Audio payload en base64 (mulaw)
+                                    if let Some(payload) = json.get("media")
+                                        .and_then(|m| m.get("payload"))
+                                        .and_then(|p| p.as_str())
+                                    {
+                                        if let Ok(audio_data) = STANDARD.decode(payload) {
+                                            // Enviar a Deepgram
+                                            if let Err(e) = audio_tx.send(audio_data).await {
+                                                error!("❌ [CALL:{}] Error enviando audio a Deepgram: {}", call_id_audio, e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                "stop" => {
+                                    info!("🔚 [CALL:{}] Media Stream terminado", call_id_audio);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => {
+                    info!("🔚 [CALL:{}] WebSocket cerrado", call_id_audio);
+                    break;
+                }
+                Err(e) => {
+                    error!("❌ [CALL:{}] Error en WebSocket: {}", call_id_audio, e);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Task para procesar transcripts de Deepgram → Claude → TTS
+    let call_id_transcript = call_id.clone();
+    let state_transcript = state.clone();
+    tokio::spawn(async move {
+        while let Some(transcript) = transcript_rx.recv().await {
+            if transcript.channel.alternatives.is_empty() {
+                continue;
+            }
+
+            let text = &transcript.channel.alternatives[0].transcript;
+            let confidence = transcript.channel.alternatives[0].confidence;
+
+            // Filtrar por confianza mínima
+            if confidence < 0.6 {
+                warn!("⚠️ [CALL:{}] Confianza baja: {} ({})", call_id_transcript, confidence, text);
+                continue;
+            }
+
+            // Procesar solo si tiene suficiente contenido
+            let word_count = text.split_whitespace().count();
+            let should_process = transcript.is_final || (word_count >= 3 && text.len() >= 10);
+
+            if !should_process {
+                continue;
+            }
+
+            if !transcript.is_final {
+                info!("⚡ [CALL:{}] Procesando transcript INTERMEDIO: '{}'", call_id_transcript, text);
+            } else {
+                info!("✅ [CALL:{}] Transcript FINAL: '{}'", call_id_transcript, text);
+            }
+
+            // Obtener sesión y contexto
+            if let Some(mut session_ref) = state_transcript.sessions.get_mut(&call_id_transcript) {
+                let context = SessionManager::get_conversation_context(&session_ref);
+
+                // Generar respuesta con Claude
+                match state_transcript.claude_service
+                    .generate_response(
+                        text,
+                        &session_ref.nombre,
+                        if context.is_empty() { None } else { Some(&context) },
+                    )
+                    .await
+                {
+                    Ok(response) => {
+                        info!("💬 [CALL:{}] Respuesta Claude: '{}'", call_id_transcript, response);
+
+                        // Agregar a historial
+                        SessionManager::add_to_history(&mut session_ref, response.clone());
+
+                        // Generar audio con ElevenLabs
+                        match state_transcript.elevenlabs_service.text_to_speech(&response).await {
+                            Ok(audio_bytes) => {
+                                let audio_key = format!("audio/response_{}_{}.mp3", 
+                                    call_id_transcript, 
+                                    chrono::Utc::now().timestamp()
+                                );
+
+                                // Subir a S3
+                                match state_transcript.s3_service.upload_audio(&audio_key, audio_bytes).await {
+                                    Ok(url) => {
+                                        info!("✅ [CALL:{}] Audio generado y subido: {}", call_id_transcript, url);
+
+                                        // Reproducir audio
+                                        if let Err(e) = state_transcript.telnyx_service.play_audio(&call_id_transcript, &url).await {
+                                            error!("❌ [CALL:{}] Error reproduciendo audio: {}", call_id_transcript, e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("❌ [CALL:{}] Error subiendo audio a S3: {}", call_id_transcript, e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("❌ [CALL:{}] Error generando audio: {}", call_id_transcript, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("❌ [CALL:{}] Error generando respuesta Claude: {}", call_id_transcript, e);
+                    }
+                }
+            }
+        }
+
+        info!("🔚 [CALL:{}] Finalizando procesamiento de transcripts", call_id_transcript);
+    });
+
+    info!("✅ [CALL:{}] Pipeline WebSocket completo configurado", call_id);
+}

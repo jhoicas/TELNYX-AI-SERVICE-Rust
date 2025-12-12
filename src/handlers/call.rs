@@ -13,15 +13,33 @@ pub async fn initiate_call(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<InitiateCallRequest>,
 ) -> Result<(StatusCode, Json<CallResponse>), (StatusCode, Json<ErrorResponse>)> {
-    match state.telnyx_service
-        .initiate_call(
-            &payload.telefono,
-            &payload.nombre,
-            &payload.telefono,
-            payload.contexto.as_deref(),
-        )
-        .await
-    {
+    // Por defecto usar WebSocket Media Streams para latencia óptima
+    let use_websocket = std::env::var("USE_MEDIA_STREAMS")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
+
+    let result = if use_websocket {
+        state.telnyx_service
+            .initiate_call_with_stream(
+                &payload.telefono,
+                &payload.nombre,
+                &payload.telefono,
+                payload.contexto.as_deref(),
+            )
+            .await
+    } else {
+        state.telnyx_service
+            .initiate_call(
+                &payload.telefono,
+                &payload.nombre,
+                &payload.telefono,
+                payload.contexto.as_deref(),
+            )
+            .await
+    };
+
+    match result {
         Ok(response) => {
             state.total_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok((StatusCode::CREATED, Json(response)))

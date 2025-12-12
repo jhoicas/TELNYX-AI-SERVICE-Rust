@@ -1,0 +1,169 @@
+use anyhow::{Result, anyhow};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use futures_util::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tracing::{info, error, warn};
+
+#[derive(Clone)]
+pub struct DeepgramWebSocket {
+    api_key: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DeepgramConfig {
+    encoding: String,
+    sample_rate: u32,
+    channels: u16,
+    language: String,
+    model: String,
+    interim_results: bool,
+    endpointing: u32,
+    utterance_end_ms: u32,
+    vad_turnoff: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeepgramTranscript {
+    pub channel: DeepgramChannel,
+    pub is_final: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeepgramChannel {
+    pub alternatives: Vec<DeepgramAlternative>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeepgramAlternative {
+    pub transcript: String,
+    pub confidence: f64,
+}
+
+impl DeepgramWebSocket {
+    pub fn new() -> Self {
+        let api_key = std::env::var("DEEPGRAM_API_KEY")
+            .expect("DEEPGRAM_API_KEY must be set");
+
+        Self { api_key }
+    }
+
+    /// Conecta a Deepgram WebSocket y retorna canales para audio y transcripts
+    pub async fn connect(
+        &self,
+        call_id: String,
+    ) -> Result<(mpsc::Sender<Vec<u8>>, mpsc::Receiver<DeepgramTranscript>)> {
+        // Construir URL de conexión con parámetros
+        let config = DeepgramConfig {
+            encoding: "mulaw".to_string(),
+            sample_rate: 8000,
+            channels: 1,
+            language: "es".to_string(),
+            model: "nova-2".to_string(),
+            interim_results: true,
+            endpointing: 200,      // 200ms de silencio para finalizar
+            utterance_end_ms: 500, // Detectar fin de frase rápido
+            vad_turnoff: 300,      // VAD sensible
+        };
+
+        let url = format!(
+            "wss://api.deepgram.com/v1/listen?encoding={}&sample_rate={}&channels={}&language={}&model={}&interim_results={}&endpointing={}&utterance_end_ms={}&vad_turnoff={}",
+            config.encoding,
+            config.sample_rate,
+            config.channels,
+            config.language,
+            config.model,
+            config.interim_results,
+            config.endpointing,
+            config.utterance_end_ms,
+            config.vad_turnoff
+        );
+
+        info!("🔌 [CALL:{}] Conectando a Deepgram WebSocket", call_id);
+
+        // Conectar con autenticación
+        let request = http::Request::builder()
+            .uri(&url)
+            .header("Authorization", format!("Token {}", self.api_key))
+            .body(())
+            .map_err(|e| anyhow!("Failed to build request: {}", e))?;
+
+        let (ws_stream, _) = connect_async(request)
+            .await
+            .map_err(|e| anyhow!("WebSocket connection failed: {}", e))?;
+
+        info!("✅ [CALL:{}] Conectado a Deepgram WebSocket", call_id);
+
+        let (mut ws_write, mut ws_read) = ws_stream.split();
+
+        // Canal para enviar audio a Deepgram
+        let (audio_tx, mut audio_rx) = mpsc::channel::<Vec<u8>>(100);
+
+        // Canal para recibir transcripts de Deepgram
+        let (transcript_tx, transcript_rx) = mpsc::channel::<DeepgramTranscript>(100);
+
+        // Task para enviar audio a Deepgram
+        let call_id_send = call_id.clone();
+        tokio::spawn(async move {
+            while let Some(audio_data) = audio_rx.recv().await {
+                if let Err(e) = ws_write.send(Message::Binary(audio_data)).await {
+                    error!("❌ [CALL:{}] Error enviando audio a Deepgram: {}", call_id_send, e);
+                    break;
+                }
+            }
+            info!("🔚 [CALL:{}] Cerrando conexión de envío Deepgram", call_id_send);
+        });
+
+        // Task para recibir transcripts de Deepgram
+        let call_id_recv = call_id.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = ws_read.next().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(json) => {
+                                // Deepgram envía varios tipos de mensajes
+                                if let Some(transcript_obj) = json.get("channel") {
+                                    match serde_json::from_value::<DeepgramTranscript>(json.clone()) {
+                                        Ok(transcript) => {
+                                            if !transcript.channel.alternatives.is_empty() {
+                                                let text = &transcript.channel.alternatives[0].transcript;
+                                                if !text.trim().is_empty() {
+                                                    info!("📝 [CALL:{}] Transcript parcial: '{}' (final: {})", 
+                                                        call_id_recv, text, transcript.is_final);
+                                                    
+                                                    if let Err(e) = transcript_tx.send(transcript).await {
+                                                        error!("❌ [CALL:{}] Error enviando transcript: {}", call_id_recv, e);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            warn!("⚠️ [CALL:{}] Error parseando transcript: {}", call_id_recv, e);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("⚠️ [CALL:{}] Error parseando JSON de Deepgram: {}", call_id_recv, e);
+                            }
+                        }
+                    }
+                    Ok(Message::Close(_)) => {
+                        info!("🔚 [CALL:{}] Deepgram cerró conexión", call_id_recv);
+                        break;
+                    }
+                    Err(e) => {
+                        error!("❌ [CALL:{}] Error en WebSocket Deepgram: {}", call_id_recv, e);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            info!("🔚 [CALL:{}] Cerrando conexión de recepción Deepgram", call_id_recv);
+        });
+
+        Ok((audio_tx, transcript_rx))
+    }
+}

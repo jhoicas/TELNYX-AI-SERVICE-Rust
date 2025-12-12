@@ -21,6 +21,10 @@ struct InitiateCallPayload {
     webhook_url: String,
     client_state: String,
     answering_machine_detection: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_track: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,6 +74,28 @@ impl TelnyxService {
         telefono: &str,
         contexto: Option<&str>,
     ) -> anyhow::Result<CallResponse> {
+        self.initiate_call_internal(to, nombre, telefono, contexto, false).await
+    }
+
+    /// Iniciar llamada con WebSocket Media Streams
+    pub async fn initiate_call_with_stream(
+        &self,
+        to: &str,
+        nombre: &str,
+        telefono: &str,
+        contexto: Option<&str>,
+    ) -> anyhow::Result<CallResponse> {
+        self.initiate_call_internal(to, nombre, telefono, contexto, true).await
+    }
+
+    async fn initiate_call_internal(
+        &self,
+        to: &str,
+        nombre: &str,
+        telefono: &str,
+        contexto: Option<&str>,
+        use_stream: bool,
+    ) -> anyhow::Result<CallResponse> {
         let webhook_url = std::env::var("WEBHOOK_BASE_URL")
             .unwrap_or_else(|_| "https://your-domain.com".to_string());
 
@@ -82,13 +108,23 @@ impl TelnyxService {
 
         let client_state_encoded = STANDARD.encode(serde_json::to_string(&client_state)?);
 
-        let payload = InitiateCallPayload {
+        let mut payload = InitiateCallPayload {
             connection_id: self.connection_id.clone(),
             to: to.to_string(),
             from: self.phone_number.clone(),
             webhook_url: format!("{}/webhook/telnyx", webhook_url),
             client_state: client_state_encoded,
             answering_machine_detection: "disabled".to_string(),
+            stream_url: None,
+            stream_track: None,
+        };
+
+        // Si se usa WebSocket, agregar stream_url
+        if use_stream {
+            let stream_url = webhook_url.replace("https://", "wss://").replace("http://", "ws://");
+            payload.stream_url = Some(format!("{}/stream/media", stream_url));
+            payload.stream_track = Some("inbound_track".to_string());
+            info!("🔌 Iniciando llamada con Media Stream: {}", payload.stream_url.as_ref().unwrap());
         };
 
         let response = self.client
