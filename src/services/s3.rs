@@ -1,5 +1,6 @@
 use aws_sdk_s3::Client as S3Client;
 use tracing::{info, error};
+use aws_config::BehaviorVersion;
 
 #[derive(Clone)]
 pub struct S3Service {
@@ -10,7 +11,7 @@ pub struct S3Service {
 
 impl S3Service {
     pub async fn new() -> anyhow::Result<Self> {
-            let config = aws_config::load_from_env().await;
+            let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
             let client = S3Client::new(&config);
 
             // Support both S3_BUCKET and AWS_S3_BUCKET env var names (platform differences)

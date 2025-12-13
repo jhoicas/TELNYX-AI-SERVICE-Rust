@@ -103,32 +103,39 @@ impl DeepgramWebSocket {
         // Canal para recibir transcripts de Deepgram
         let (transcript_tx, transcript_rx) = mpsc::channel::<DeepgramTranscript>(100);
 
-        // Task para enviar audio a Deepgram
+        // Task única de envío: audio + ping keepalive, usando el mismo sink
         let call_id_send = call_id.clone();
         tokio::spawn(async move {
-            while let Some(audio_data) = audio_rx.recv().await {
-                if let Err(e) = ws_write.send(Message::Binary(audio_data)).await {
-                    error!("❌ [CALL:{}] Error enviando audio a Deepgram: {}", call_id_send, e);
-                    break;
+            let mut ping_interval = tokio::time::interval(tokio::time::Duration::from_secs(25));
+            loop {
+                tokio::select! {
+                    maybe_audio = audio_rx.recv() => {
+                        match maybe_audio {
+                            Some(audio_data) => {
+                                if let Err(e) = ws_write.send(Message::Binary(audio_data)).await {
+                                    error!("❌ [CALL:{}] Error enviando audio a Deepgram: {}", call_id_send, e);
+                                    break;
+                                }
+                            }
+                            None => {
+                                debug!("📤 [CALL:{}] Canal de audio cerrado", call_id_send);
+                                // Enviar Close limpio
+                                let _ = ws_write.send(Message::Close(None)).await;
+                                break;
+                            }
+                        }
+                    }
+                    _ = ping_interval.tick() => {
+                        if let Err(e) = ws_write.send(Message::Ping(Vec::new())).await {
+                            warn!("⚠️ [CALL:{}] Ping Deepgram falló: {}", call_id_send, e);
+                            break;
+                        } else {
+                            debug!("📶 [CALL:{}] Ping Deepgram enviado", call_id_send);
+                        }
+                    }
                 }
             }
             info!("🔚 [CALL:{}][WS->Deepgram] Cierre de envío", call_id_send);
-        });
-
-        // Task de keepalive: enviar ping periódico para mantener la conexión estable
-        let mut ws_ping = ws_write.clone();
-        let call_id_ping = call_id.clone();
-        tokio::spawn(async move {
-            let interval = tokio::time::Duration::from_secs(25);
-            loop {
-                tokio::time::sleep(interval).await;
-                if let Err(e) = ws_ping.send(Message::Ping(Vec::new())).await {
-                    warn!("⚠️ [CALL:{}] Ping Deepgram falló: {}", call_id_ping, e);
-                    break;
-                } else {
-                    debug!("📶 [CALL:{}] Ping Deepgram enviado", call_id_ping);
-                }
-            }
         });
 
         // Task para recibir transcripts de Deepgram
