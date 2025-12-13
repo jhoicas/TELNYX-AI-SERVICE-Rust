@@ -3,7 +3,7 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tracing::{info, error, warn};
+use tracing::{info, error, warn, debug};
 
 #[derive(Clone)]
 pub struct DeepgramWebSocket {
@@ -79,7 +79,7 @@ impl DeepgramWebSocket {
             config.vad_turnoff
         );
 
-        info!("🔌 [CALL:{}] Conectando a Deepgram WebSocket", call_id);
+        info!("🔌 [CALL:{}][WS->Deepgram] Conectando", call_id);
 
         // Conectar con autenticación
         let request = http::Request::builder()
@@ -92,7 +92,7 @@ impl DeepgramWebSocket {
             .await
             .map_err(|e| anyhow!("WebSocket connection failed: {}", e))?;
 
-        info!("✅ [CALL:{}] Conectado a Deepgram WebSocket", call_id);
+        info!("✅ [CALL:{}][WS->Deepgram] Conectado", call_id);
 
         let (mut ws_write, mut ws_read) = ws_stream.split();
 
@@ -111,7 +111,7 @@ impl DeepgramWebSocket {
                     break;
                 }
             }
-            info!("🔚 [CALL:{}] Cerrando conexión de envío Deepgram", call_id_send);
+            info!("🔚 [CALL:{}][WS->Deepgram] Cierre de envío", call_id_send);
         });
 
         // Task para recibir transcripts de Deepgram
@@ -129,8 +129,9 @@ impl DeepgramWebSocket {
                                             if !transcript.channel.alternatives.is_empty() {
                                                 let text = &transcript.channel.alternatives[0].transcript;
                                                 if !text.trim().is_empty() {
-                                                    info!("📝 [CALL:{}] Transcript parcial: '{}' (final: {})", 
-                                                        call_id_recv, text, transcript.is_final);
+                                                    let wc = text.split_whitespace().count();
+                                                    debug!("📝 [CALL:{}][Deepgram->WS] msg len={} words={} final={} conf={:.2}", call_id_recv, text.len(), wc, transcript.is_final, transcript.channel.alternatives[0].confidence);
+                                                    info!("💬 [CALL:{}][Deepgram] {}: '{}'", call_id_recv, if transcript.is_final {"FINAL"} else {"INTERIM"}, text);
                                                     
                                                     if let Err(e) = transcript_tx.send(transcript).await {
                                                         error!("❌ [CALL:{}] Error enviando transcript: {}", call_id_recv, e);

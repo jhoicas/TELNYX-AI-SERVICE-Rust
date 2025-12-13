@@ -27,6 +27,18 @@ struct InitiateCallPayload {
     stream_track: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct StreamingStartPayload {
+    stream_url: String,
+    stream_track: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codec: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sample_rate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channels: Option<u8>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct TelnyxCallResponse {
     data: TelnyxCallData,
@@ -167,6 +179,41 @@ impl TelnyxService {
             status: data.status.unwrap_or_else(|| "initiated".to_string()),
             timestamp: chrono::Utc::now(),
         })
+    }
+
+    /// Inicia Media Streams en una llamada activa usando Call Command streaming_start
+    pub async fn start_media_stream(&self, call_control_id: &str) -> anyhow::Result<()> {
+        let webhook_url = std::env::var("WEBHOOK_BASE_URL")
+            .unwrap_or_else(|_| "https://your-domain.com".to_string());
+
+        let stream_base = webhook_url.replace("https://", "wss://").replace("http://", "ws://");
+        let stream_url = format!("{}/stream/media", stream_base);
+
+        let payload = StreamingStartPayload {
+            stream_url: stream_url.clone(),
+            stream_track: std::env::var("STREAM_TRACK").unwrap_or_else(|_| "inbound_track".to_string()),
+            codec: Some("PCMU".to_string()),
+            sample_rate: Some(8000),
+            channels: Some(1),
+        };
+
+        debug!("📡 [CALL:{}] Enviando streaming_start -> {}", call_control_id, stream_url);
+
+        let response = self.client
+            .post(format!("{}/calls/{}/actions/streaming_start", self.base_url, call_control_id))
+            .bearer_auth(&self.api_key)
+            .json(&payload)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            error!("❌ [CALL:{}] streaming_start falló: {}", call_control_id, error_text);
+            return Err(anyhow::anyhow!("Failed to start media stream"));
+        }
+
+        info!("✅ [CALL:{}] Media Stream iniciado via streaming_start", call_control_id);
+        Ok(())
     }
 
     pub async fn speak(

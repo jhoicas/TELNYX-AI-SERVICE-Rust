@@ -116,27 +116,47 @@ async fn handle_call_answered(
         error!("⚠️ No se pudo obtener saludo para: {}", greeting_key);
     }
 
-    // 🎙️ IMPORTANTE: Iniciar transcripción EN PARALELO con saludo (sin esperar a que termine)
-    let call_id_for_transcription = call_control_id.clone();
-    let telnyx_svc = state.telnyx_service.clone();
-    let session_mgr = state.sessions.clone();
-    
-    tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Delay para que Telnyx esté listo
-        
-        // Marcar que transcripción se va a iniciar
-        if let Some(mut sess) = session_mgr.get_mut(&call_id_for_transcription) {
-            sess.transcription_started = true;
-        }
-        
-        if let Err(e) = telnyx_svc.start_transcription(&call_id_for_transcription).await {
-            error!("❌ [CALL:{}] Error iniciando transcripción paralela: {}", call_id_for_transcription, e);
-        } else {
-            info!("✅ [CALL:{}] Transcripción iniciada EN PARALELO con saludo", call_id_for_transcription);
-        }
-    });
+    let use_media_streams = std::env::var("USE_MEDIA_STREAMS")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
 
-    info!("📡 [CALL:{}] Transcripción iniciándose en paralelo con saludo", call_control_id);
+    if use_media_streams {
+        let call_id_for_stream = call_control_id.clone();
+        let telnyx_svc = state.telnyx_service.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await; // pequeño delay para que la llamada esté viva
+            if let Err(e) = telnyx_svc.start_media_stream(&call_id_for_stream).await {
+                error!("❌ [CALL:{}] Error iniciando Media Stream: {}", call_id_for_stream, e);
+            } else {
+                info!("✅ [CALL:{}] Media Stream iniciado en paralelo al saludo", call_id_for_stream);
+            }
+        });
+
+        info!("📡 [CALL:{}] Intentando iniciar Media Stream en paralelo", call_control_id);
+    } else {
+        // 🎙️ Fallback: transcripción clásica vía webhook de Telnyx
+        let call_id_for_transcription = call_control_id.clone();
+        let telnyx_svc = state.telnyx_service.clone();
+        let session_mgr = state.sessions.clone();
+        
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            
+            if let Some(mut sess) = session_mgr.get_mut(&call_id_for_transcription) {
+                sess.transcription_started = true;
+            }
+            
+            if let Err(e) = telnyx_svc.start_transcription(&call_id_for_transcription).await {
+                error!("❌ [CALL:{}] Error iniciando transcripción paralela: {}", call_id_for_transcription, e);
+            } else {
+                info!("✅ [CALL:{}] Transcripción iniciada EN PARALELO con saludo", call_id_for_transcription);
+            }
+        });
+
+        info!("📡 [CALL:{}] Transcripción iniciándose en paralelo con saludo", call_control_id);
+    }
 
     // ✅ Log corregido
     info!("✅ Llamada contestada y saludo enviado. Nombre: {}, Tel: {}", 

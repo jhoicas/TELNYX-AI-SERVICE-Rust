@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{info, error, warn};
+use tracing::{info, error, warn, debug};
 use futures_util::StreamExt;
 use base64::{engine::general_purpose::STANDARD, Engine};
 
@@ -19,7 +19,7 @@ pub async fn handle_media_stream(
 }
 
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
-    info!("🔌 Nueva conexión Media Stream establecida");
+    info!("🔌 [MediaStream][Telnyx->WS] Nueva conexión establecida");
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
     
@@ -36,25 +36,25 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                 .unwrap_or("unknown")
                                 .to_string();
                             
-                            info!("📞 [CALL:{}] Media Stream iniciado", call_id);
+                            info!("📞 [CALL:{}][MediaStream] START recibido", call_id);
                             call_id
                         } else {
-                            warn!("⚠️ Primer mensaje no es 'start': {}", event);
+                            warn!("⚠️ [MediaStream] Primer mensaje no es 'start': {}", event);
                             return;
                         }
                     } else {
-                        warn!("⚠️ Mensaje sin evento");
+                        warn!("⚠️ [MediaStream] Mensaje sin evento");
                         return;
                     }
                 }
                 Err(e) => {
-                    error!("❌ Error parseando mensaje inicial: {}", e);
+                    error!("❌ [MediaStream] Error parseando mensaje inicial: {}", e);
                     return;
                 }
             }
         }
         _ => {
-            error!("❌ No se recibió mensaje inicial");
+            error!("❌ [MediaStream] No se recibió mensaje inicial");
             return;
         }
     };
@@ -91,7 +91,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                 _ => "evening",
             };
 
-            info!("🔊 [CALL:{}] Reproduciendo saludo: {}", call_id, greeting_key);
+            info!("🔊 [CALL:{}][TTS] Reproduciendo saludo: {}", call_id, greeting_key);
             
             if let Some(url) = state.get_or_generate_greeting(greeting_key).await {
                 if let Err(e) = state.telnyx_service.play_audio(&call_id, &url).await {
@@ -118,6 +118,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                         .and_then(|p| p.as_str())
                                     {
                                         if let Ok(audio_data) = STANDARD.decode(payload) {
+                                            debug!("🎤 [CALL:{}][Telnyx->Deepgram] frame bytes={} b64_len={}", call_id_audio, audio_data.len(), payload.len());
                                             // Enviar a Deepgram
                                             if let Err(e) = audio_tx.send(audio_data).await {
                                                 error!("❌ [CALL:{}] Error enviando audio a Deepgram: {}", call_id_audio, e);
@@ -127,7 +128,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                     }
                                 }
                                 "stop" => {
-                                    info!("🔚 [CALL:{}] Media Stream terminado", call_id_audio);
+                                    info!("🔚 [CALL:{}][MediaStream] STOP recibido", call_id_audio);
                                     break;
                                 }
                                 _ => {}
@@ -136,11 +137,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                     }
                 }
                 Ok(Message::Close(_)) => {
-                    info!("🔚 [CALL:{}] WebSocket cerrado", call_id_audio);
+                    info!("🔚 [CALL:{}][MediaStream] WebSocket cerrado por cliente", call_id_audio);
                     break;
                 }
                 Err(e) => {
-                    error!("❌ [CALL:{}] Error en WebSocket: {}", call_id_audio, e);
+                    error!("❌ [CALL:{}][MediaStream] Error en WebSocket: {}", call_id_audio, e);
                     break;
                 }
                 _ => {}
@@ -174,11 +175,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                 continue;
             }
 
-            if !transcript.is_final {
-                info!("⚡ [CALL:{}] Procesando transcript INTERMEDIO: '{}'", call_id_transcript, text);
-            } else {
-                info!("✅ [CALL:{}] Transcript FINAL: '{}'", call_id_transcript, text);
-            }
+            let marker = if transcript.is_final {"FINAL"} else {"INTERIM"};
+            let wc = word_count;
+            let conf = confidence;
+            info!("💬 [CALL:{}][Deepgram->App] {} (conf {:.2}, words {}): '{}'", call_id_transcript, marker, conf, wc, text);
 
             // Obtener sesión y contexto
             if let Some(mut session_ref) = state_transcript.sessions.get_mut(&call_id_transcript) {
@@ -194,7 +194,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                     .await
                 {
                     Ok(response) => {
-                        info!("💬 [CALL:{}] Respuesta Claude: '{}'", call_id_transcript, response);
+                        info!("🤖 [CALL:{}][Claude] Respuesta: '{}'", call_id_transcript, response);
 
                         // Agregar a historial
                         SessionManager::add_to_history(&mut session_ref, response.clone());
@@ -210,7 +210,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                 // Subir a S3
                                 match state_transcript.s3_service.upload_audio(&audio_key, audio_bytes).await {
                                     Ok(url) => {
-                                        info!("✅ [CALL:{}] Audio generado y subido: {}", call_id_transcript, url);
+                                        info!("🔊 [CALL:{}][TTS] Audio generado y subido: {}", call_id_transcript, url);
 
                                         // Reproducir audio
                                         if let Err(e) = state_transcript.telnyx_service.play_audio(&call_id_transcript, &url).await {
