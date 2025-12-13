@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use tracing::{info, error, warn, debug};
 use futures_util::StreamExt;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use chrono::Timelike;
 
 use crate::services::{AppState, SessionManager, DeepgramWebSocket};
 
@@ -21,7 +22,7 @@ pub async fn handle_media_stream(
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     info!("🔌 [MediaStream][Telnyx->WS] Nueva conexión establecida");
 
-    let (mut ws_sender, mut ws_receiver) = socket.split();
+    let (_, mut ws_receiver) = socket.split();
     
     // Esperamos el primer mensaje que contiene el call_control_id
     let call_id = match ws_receiver.next().await {

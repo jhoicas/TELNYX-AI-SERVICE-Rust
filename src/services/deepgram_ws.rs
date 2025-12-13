@@ -4,6 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{info, error, warn, debug};
+use http::Request;
 
 #[derive(Clone)]
 pub struct DeepgramWebSocket {
@@ -82,7 +83,7 @@ impl DeepgramWebSocket {
         info!("🔌 [CALL:{}][WS->Deepgram] Conectando", call_id);
 
         // Conectar con autenticación
-        let request = http::Request::builder()
+        let request: Request<()> = Request::builder()
             .uri(&url)
             .header("Authorization", format!("Token {}", self.api_key))
             .body(())
