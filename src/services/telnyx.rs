@@ -133,9 +133,19 @@ impl TelnyxService {
 
         // Si se usa WebSocket, agregar stream_url
         if use_stream {
-            let stream_url = webhook_url.replace("https://", "wss://").replace("http://", "ws://");
-            payload.stream_url = Some(format!("{}/stream/media", stream_url));
-            payload.stream_track = Some("inbound_track".to_string());
+            // Preferir WS_STREAM_URL explícita
+            let ws_stream_url = std::env::var("WS_STREAM_URL").ok();
+            let stream_url = match ws_stream_url {
+                Some(u) => u,
+                None => {
+                    let base = webhook_url.replace("https://", "wss://").replace("http://", "ws://");
+                    format!("{}/stream/media", base)
+                }
+            };
+            payload.stream_url = Some(stream_url);
+            // Track válido: "inbound" o "outbound"
+            let track = std::env::var("STREAM_TRACK").unwrap_or_else(|_| "inbound".to_string());
+            payload.stream_track = Some(track);
             info!("🔌 Iniciando llamada con Media Stream: {}", payload.stream_url.as_ref().unwrap());
         };
 
@@ -191,7 +201,7 @@ impl TelnyxService {
 
         let payload = StreamingStartPayload {
             stream_url: stream_url.clone(),
-            stream_track: std::env::var("STREAM_TRACK").unwrap_or_else(|_| "inbound_track".to_string()),
+            stream_track: std::env::var("STREAM_TRACK").unwrap_or_else(|_| "inbound".to_string()),
             codec: Some("PCMU".to_string()),
             sample_rate: Some(8000),
             channels: Some(1),

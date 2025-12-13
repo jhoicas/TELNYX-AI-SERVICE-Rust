@@ -115,6 +115,22 @@ impl DeepgramWebSocket {
             info!("🔚 [CALL:{}][WS->Deepgram] Cierre de envío", call_id_send);
         });
 
+        // Task de keepalive: enviar ping periódico para mantener la conexión estable
+        let mut ws_ping = ws_write.clone();
+        let call_id_ping = call_id.clone();
+        tokio::spawn(async move {
+            let interval = tokio::time::Duration::from_secs(25);
+            loop {
+                tokio::time::sleep(interval).await;
+                if let Err(e) = ws_ping.send(Message::Ping(Vec::new())).await {
+                    warn!("⚠️ [CALL:{}] Ping Deepgram falló: {}", call_id_ping, e);
+                    break;
+                } else {
+                    debug!("📶 [CALL:{}] Ping Deepgram enviado", call_id_ping);
+                }
+            }
+        });
+
         // Task para recibir transcripts de Deepgram
         let call_id_recv = call_id.clone();
         tokio::spawn(async move {

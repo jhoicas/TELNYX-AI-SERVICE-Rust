@@ -23,6 +23,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     info!("🔌 [MediaStream][Telnyx->WS] Nueva conexión establecida");
 
     let (_, mut ws_receiver) = socket.split();
+    // Canal para coalescer audio y reducir overhead de frames pequeños
+    let (coalesce_tx, mut coalesce_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
     
     // Esperamos el primer mensaje que contiene el call_control_id
     let call_id = match ws_receiver.next().await {
@@ -102,7 +104,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
-    // Task para procesar audio de Telnyx → Deepgram
+    // Task para procesar audio de Telnyx → buffer de coalescing
     let call_id_audio = call_id.clone();
     tokio::spawn(async move {
         while let Some(msg) = ws_receiver.next().await {
@@ -120,9 +122,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                     {
                                         if let Ok(audio_data) = STANDARD.decode(payload) {
                                             debug!("🎤 [CALL:{}][Telnyx->Deepgram] frame bytes={} b64_len={}", call_id_audio, audio_data.len(), payload.len());
-                                            // Enviar a Deepgram
-                                            if let Err(e) = audio_tx.send(audio_data).await {
-                                                error!("❌ [CALL:{}] Error enviando audio a Deepgram: {}", call_id_audio, e);
+                                            // Enviar al buffer de coalescing
+                                            if let Err(e) = coalesce_tx.send(audio_data).await {
+                                                error!("❌ [CALL:{}] Error en buffer de coalescing: {}", call_id_audio, e);
                                                 break;
                                             }
                                         }
@@ -150,7 +152,88 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
-    // Task para procesar transcripts de Deepgram → Claude → TTS
+    // Task de coalescing: agrupa frames y los envía periódicamente a Deepgram
+    let call_id_flush = call_id.clone();
+    tokio::spawn(async move {
+        let mut buffer: Vec<u8> = Vec::with_capacity(4096);
+        let mut last_flush = tokio::time::Instant::now();
+        let flush_interval = tokio::time::Duration::from_millis(40);
+        loop {
+            tokio::select! {
+                maybe_chunk = coalesce_rx.recv() => {
+                    match maybe_chunk {
+                        Some(chunk) => {
+                            buffer.extend_from_slice(&chunk);
+                            if buffer.len() >= 2048 {
+                                if let Err(e) = audio_tx.send(std::mem::take(&mut buffer)).await {
+                                    error!("❌ [CALL:{}] Error enviando audio coalesced: {}", call_id_flush, e);
+                                    break;
+                                }
+                                last_flush = tokio::time::Instant::now();
+                            }
+                        }
+                        None => {
+                            // canal cerrado
+                            if !buffer.is_empty() {
+                                let _ = audio_tx.send(std::mem::take(&mut buffer)).await;
+                            }
+                            info!("🔚 [CALL:{}] Coalescing finalizado", call_id_flush);
+                            break;
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(flush_interval) => {
+                    if !buffer.is_empty() && last_flush.elapsed() >= flush_interval {
+                        if let Err(e) = audio_tx.send(std::mem::take(&mut buffer)).await {
+                            error!("❌ [CALL:{}] Error enviando audio coalesced (timer): {}", call_id_flush, e);
+                            break;
+                        }
+                        last_flush = tokio::time::Instant::now();
+                    }
+                }
+            }
+        }
+    });
+
+    // Cola FIFO para reproducir respuestas TTS sin solaparse
+    let (tts_tx, mut tts_rx) = tokio::sync::mpsc::channel::<String>(100);
+
+    // Worker de reproducción: toma respuestas de la cola y las reproduce en orden
+    let call_id_tts_worker = call_id.clone();
+    let state_tts_worker = state.clone();
+    tokio::spawn(async move {
+        while let Some(response_text) = tts_rx.recv().await {
+            // Generar audio con ElevenLabs
+            match state_tts_worker.elevenlabs_service.text_to_speech(&response_text).await {
+                Ok(audio_bytes) => {
+                    let audio_key = format!("audio/response_{}_{}.mp3", 
+                        call_id_tts_worker, 
+                        chrono::Utc::now().timestamp()
+                    );
+
+                    // Subir a S3
+                    match state_tts_worker.s3_service.upload_audio(&audio_key, audio_bytes).await {
+                        Ok(url) => {
+                            info!("🔊 [CALL:{}][TTS] Audio generado y subido: {}", call_id_tts_worker, url);
+                            // Reproducir audio
+                            if let Err(e) = state_tts_worker.telnyx_service.play_audio(&call_id_tts_worker, &url).await {
+                                error!("❌ [CALL:{}] Error reproduciendo audio: {}", call_id_tts_worker, e);
+                            }
+                        }
+                        Err(e) => {
+                            error!("❌ [CALL:{}] Error subiendo audio a S3: {}", call_id_tts_worker, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("❌ [CALL:{}] Error generando audio: {}", call_id_tts_worker, e);
+                }
+            }
+        }
+        info!("🔚 [CALL:{}] TTS worker finalizado", call_id_tts_worker);
+    });
+
+    // Task para procesar transcripts de Deepgram → Claude → push a cola TTS
     let call_id_transcript = call_id.clone();
     let state_transcript = state.clone();
     tokio::spawn(async move {
@@ -170,7 +253,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
             // Procesar solo si tiene suficiente contenido
             let word_count = text.split_whitespace().count();
-            let should_process = transcript.is_final || (word_count >= 3 && text.len() >= 10);
+            let ends_sentence = text.trim_end().ends_with('.') || text.trim_end().ends_with('?') || text.trim_end().ends_with('!');
+            let should_process = transcript.is_final || (word_count >= 4 && (text.len() >= 14 || ends_sentence));
 
             if !should_process {
                 continue;
@@ -199,33 +283,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
                         // Agregar a historial
                         SessionManager::add_to_history(&mut session_ref, response.clone());
-
-                        // Generar audio con ElevenLabs
-                        match state_transcript.elevenlabs_service.text_to_speech(&response).await {
-                            Ok(audio_bytes) => {
-                                let audio_key = format!("audio/response_{}_{}.mp3", 
-                                    call_id_transcript, 
-                                    chrono::Utc::now().timestamp()
-                                );
-
-                                // Subir a S3
-                                match state_transcript.s3_service.upload_audio(&audio_key, audio_bytes).await {
-                                    Ok(url) => {
-                                        info!("🔊 [CALL:{}][TTS] Audio generado y subido: {}", call_id_transcript, url);
-
-                                        // Reproducir audio
-                                        if let Err(e) = state_transcript.telnyx_service.play_audio(&call_id_transcript, &url).await {
-                                            error!("❌ [CALL:{}] Error reproduciendo audio: {}", call_id_transcript, e);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!("❌ [CALL:{}] Error subiendo audio a S3: {}", call_id_transcript, e);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                error!("❌ [CALL:{}] Error generando audio: {}", call_id_transcript, e);
-                            }
+                        // Empujar respuesta a la cola TTS para reproducción ordenada
+                        if let Err(e) = tts_tx.send(response).await {
+                            error!("❌ [CALL:{}] Error encolar respuesta TTS: {}", call_id_transcript, e);
                         }
                     }
                     Err(e) => {

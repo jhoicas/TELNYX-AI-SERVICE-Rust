@@ -74,6 +74,7 @@
   DEEPGRAM_API_KEY=tu_api_key_aqui
   USE_MEDIA_STREAMS=true
   WEBHOOK_BASE_URL=https://tu-dominio.com
+  WS_STREAM_URL=wss://tu-dominio.com/stream/media
   ```
   
   Si falta alguno, agrégalo
@@ -112,6 +113,10 @@
   ```
   - Debe responder con: `HTTP/1.1 101 Switching Protocols`
 
+- [ ] **PASO 4D.1**: Confirma inicio de streaming programático (Telnyx):
+  - En logs, después de `call.answered`, debe verse `Streaming Start requested` y `Media stream started`.
+  - Recuerda: Telnyx Media Streams no se habilita por UI; se inicia con Call Command `streaming_start`.
+
 - [ ] **PASO 4E**: Haz llamada de prueba:
   ```powershell
   $body = @{nombre="TestUser"; telefono="+5730001234567"} | ConvertTo-Json
@@ -149,8 +154,40 @@
 
 - [ ] **PASO 5D**: Vuelve a WebSocket:
   - [ ] `USE_MEDIA_STREAMS=true` en `.env`
+  - [ ] `WS_STREAM_URL` apunta al WS público (`wss://<host>/stream/media`)
   - [ ] Reinicia servidor
   - [ ] Verifica logs muestren: 🔌 WebSocket operations
+
+---
+
+### TELNYX: Media Streams (Importante)
+
+Telnyx confirmó por soporte que Media Streams para Voice API NO se activa en el Portal UI. Debe iniciarse programáticamente usando Call Commands `Streaming Start` durante una llamada activa.
+
+Referencia: https://developers.telnyx.com/api-reference/call-commands/streaming-start
+
+Checklist rápido:
+- Webhook HTTP: `https://<host>/webhook/telnyx` (para eventos).
+- WebSocket Stream: `wss://<host>/stream/media` (audio en tiempo real).
+- En `call.answered`, el backend envía `streaming_start` si `USE_MEDIA_STREAMS=true`.
+- Parámetros clave: `stream_url`, `audio.track` (inbound), `audio.codec` (mulaw), `sample_rate` (8000).
+
+Ejemplo de payload (conceptual):
+```
+POST /calls/{call_control_id}/actions/streaming_start
+{
+  "stream_url": "wss://<host>/stream/media",
+  "audio": {
+    "track": "inbound",
+    "codec": "mulaw",
+    "sample_rate": 8000
+  }
+}
+```
+
+Notas:
+- No confundas `Webhook URL` (HTTP) con `Stream URL` (WS); son distintos.
+- El audio fluye al WS solo tras `streaming_start` exitoso.
 
 ---
 
