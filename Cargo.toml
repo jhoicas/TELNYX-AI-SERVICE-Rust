@@ -57,6 +57,12 @@ governor = "0.6"
 # Base64
 base64 = "0.21"
 
+[patch.crates-io]
+# Force a single version of websocket + http stack across transitive deps
+tungstenite = "0.24.0"
+tokio-tungstenite = "0.24.0"
+http = "1.4.0"
+
 [dev-dependencies]
 tokio-test = "0.4"
 
