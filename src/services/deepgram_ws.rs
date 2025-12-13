@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{info, error, warn, debug};
-use http::Request;
+use http02::Request;
 
 #[derive(Clone)]
 pub struct DeepgramWebSocket {

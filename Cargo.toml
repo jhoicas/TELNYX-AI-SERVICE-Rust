@@ -23,6 +23,7 @@ serde_json = "1.0"
 # HTTP Client
 reqwest = { version = "0.12", features = ["json", "stream"] }
 http = "1"
+http02 = { package = "http", version = "0.2" }
 
 # Environment variables
 dotenv = "0.15"
@@ -56,12 +57,6 @@ governor = "0.6"
 
 # Base64
 base64 = "0.21"
-
-[patch.crates-io]
-# Force a single version of websocket + http stack across transitive deps
-tungstenite = "0.24.0"
-tokio-tungstenite = "0.24.0"
-http = "1.4.0"
 
 [dev-dependencies]
 tokio-test = "0.4"
