@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use std::sync::Arc;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use crate::models::SessionInfo;
 
 pub type Sessions = Arc<DashMap<String, SessionInfo>>;

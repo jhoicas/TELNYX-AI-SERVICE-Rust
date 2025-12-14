@@ -168,7 +168,7 @@ async fn handle_call_answered(
 }
 
 async fn handle_speak_ended(
-    state: Arc<AppState>,
+    _state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let call_control_id = match payload["data"]["call_control_id"].as_str()
@@ -185,7 +185,7 @@ async fn handle_speak_ended(
 }
 
 async fn handle_playback_started(
-    state: Arc<AppState>,
+    _state: Arc<AppState>,
     payload: serde_json::Value,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let call_control_id = match payload["data"]["call_control_id"].as_str()

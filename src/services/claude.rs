@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{info, error, debug};
+use tracing::{info, error};
 
 #[derive(Clone)]
 pub struct ClaudeService {

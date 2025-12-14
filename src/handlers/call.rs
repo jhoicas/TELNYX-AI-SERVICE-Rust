@@ -3,7 +3,6 @@ use axum::{
     http::StatusCode,
 };
 use std::sync::Arc;
-use tracing::info;
 use crate::{
     models::{InitiateCallRequest, BatchCallsRequest, CallResponse, StatsResponse, ErrorResponse},
     services::AppState,
