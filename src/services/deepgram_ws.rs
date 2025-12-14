@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{info, error, warn, debug};
-use http02::Request;
+use axum::http::Request as AxumRequest;
 
 #[derive(Clone)]
 pub struct DeepgramWebSocket {
@@ -83,7 +83,7 @@ impl DeepgramWebSocket {
         info!("🔌 [CALL:{}][WS->Deepgram] Conectando", call_id);
 
         // Conectar con autenticación
-        let request: Request<()> = Request::builder()
+        let request: AxumRequest<()> = AxumRequest::builder()
             .uri(&url)
             .header("Authorization", format!("Token {}", self.api_key))
             .body(())
