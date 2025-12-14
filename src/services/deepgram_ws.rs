@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, tungstenite::client::IntoClientRequest};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -81,12 +81,16 @@ impl DeepgramWebSocket {
 
         info!("🔌 [CALL:{}][WS->Deepgram] Conectando", call_id);
 
-        // Conectar con autenticación usando axum::http::Request (http 0.2)
-        let request = axum::http::Request::builder()
-            .uri(&url)
-            .header("Authorization", format!("Token {}", self.api_key))
-            .body(())
+        // Crear request usando into_client_request() para headers correctos
+        let mut request = url.into_client_request()
             .map_err(|e| anyhow!("Failed to build request: {}", e))?;
+        
+        request.headers_mut().insert(
+            "Authorization",
+            format!("Token {}", self.api_key)
+                .parse()
+                .map_err(|e| anyhow!("Invalid header value: {}", e))?
+        );
 
         let (ws_stream, _) = connect_async(request)
             .await
