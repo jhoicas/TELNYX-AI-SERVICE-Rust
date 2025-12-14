@@ -81,8 +81,8 @@ impl DeepgramWebSocket {
 
         info!("🔌 [CALL:{}][WS->Deepgram] Conectando", call_id);
 
-        // Conectar con autenticación
-        let request = http02::Request::builder()
+        // Conectar con autenticación usando axum::http::Request (http 0.2)
+        let request = axum::http::Request::builder()
             .uri(&url)
             .header("Authorization", format!("Token {}", self.api_key))
             .body(())
