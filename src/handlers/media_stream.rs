@@ -26,39 +26,55 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Canal para coalescer audio y reducir overhead de frames pequeños
     let (coalesce_tx, mut coalesce_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
     
-    // Esperamos el primer mensaje que contiene el call_control_id
-    let call_id = match ws_receiver.next().await {
-        Some(Ok(Message::Text(text))) => {
-            match serde_json::from_str::<serde_json::Value>(&text) {
-                Ok(json) => {
-                    if let Some(event) = json.get("event").and_then(|e| e.as_str()) {
-                        if event == "start" {
-                            let call_id = json.get("start")
-                                .and_then(|s| s.get("call_control_id"))
-                                .and_then(|c| c.as_str())
-                                .unwrap_or("unknown")
-                                .to_string();
-                            
-                            info!("📞 [CALL:{}][MediaStream] START recibido", call_id);
-                            call_id
+    // Esperamos el mensaje "start" que trae call_control_id; ignoramos handshakes como "connected".
+    let call_id = loop {
+        match ws_receiver.next().await {
+            Some(Ok(Message::Text(text))) => {
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(json) => {
+                        if let Some(event) = json.get("event").and_then(|e| e.as_str()) {
+                            match event {
+                                "start" => {
+                                    let call_id = json.get("start")
+                                        .and_then(|s| s.get("call_control_id"))
+                                        .and_then(|c| c.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let stream_id = json.get("start")
+                                        .and_then(|s| s.get("stream_id"))
+                                        .and_then(|c| c.as_str())
+                                        .unwrap_or("n/a");
+                                    info!("📞 [CALL:{}][MediaStream] START recibido (stream_id={})", call_id, stream_id);
+                                    break call_id;
+                                }
+                                other => {
+                                    warn!("⚠️ [MediaStream] Mensaje inicial ignorado (event={}): {}", other, text);
+                                    continue;
+                                }
+                            }
                         } else {
-                            warn!("⚠️ [MediaStream] Primer mensaje no es 'start': {}", event);
-                            return;
+                            warn!("⚠️ [MediaStream] Mensaje sin evento: {}", text);
+                            continue;
                         }
-                    } else {
-                        warn!("⚠️ [MediaStream] Mensaje sin evento");
+                    }
+                    Err(e) => {
+                        error!("❌ [MediaStream] Error parseando mensaje inicial: {}", e);
                         return;
                     }
                 }
-                Err(e) => {
-                    error!("❌ [MediaStream] Error parseando mensaje inicial: {}", e);
-                    return;
-                }
             }
-        }
-        _ => {
-            error!("❌ [MediaStream] No se recibió mensaje inicial");
-            return;
+            Some(Ok(_)) => {
+                // Binario en handshake: seguir leyendo
+                continue;
+            }
+            Some(Err(e)) => {
+                error!("❌ [MediaStream] Error recibiendo mensaje inicial: {}", e);
+                return;
+            }
+            None => {
+                error!("❌ [MediaStream] No se recibió mensaje inicial");
+                return;
+            }
         }
     };
 
@@ -107,6 +123,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     // Task para procesar audio de Telnyx → buffer de coalescing
     let call_id_audio = call_id.clone();
     tokio::spawn(async move {
+        let mut frame_count: u64 = 0;
         while let Some(msg) = ws_receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
@@ -121,7 +138,12 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                                         .and_then(|p| p.as_str())
                                     {
                                         if let Ok(audio_data) = STANDARD.decode(payload) {
-                                            debug!("🎤 [CALL:{}][Telnyx->Deepgram] frame bytes={} b64_len={}", call_id_audio, audio_data.len(), payload.len());
+                                            frame_count += 1;
+                                            if frame_count <= 5 {
+                                                info!("🎤 [CALL:{}][Telnyx->Deepgram] frame#{} bytes={} b64_len={}", call_id_audio, frame_count, audio_data.len(), payload.len());
+                                            } else {
+                                                debug!("🎤 [CALL:{}][Telnyx->Deepgram] frame#{} bytes={} b64_len={}", call_id_audio, frame_count, audio_data.len(), payload.len());
+                                            }
                                             // Enviar al buffer de coalescing
                                             if let Err(e) = coalesce_tx.send(audio_data).await {
                                                 error!("❌ [CALL:{}] Error en buffer de coalescing: {}", call_id_audio, e);

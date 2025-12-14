@@ -212,8 +212,15 @@ async fn handle_playback_ended(
         None => return (StatusCode::BAD_REQUEST, Json(json!({"error": "Missing call_control_id"}))),
     };
 
-    // ✅ Iniciar transcripción SOLO la primera vez (después del saludo)
-    if let Some(mut session) = state.sessions.get_mut(&call_control_id) {
+    // ✅ Iniciar transcripción SOLO en modo webhook (cuando NO usamos Media Streams)
+    let use_media_streams = std::env::var("USE_MEDIA_STREAMS")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
+
+    if use_media_streams {
+        info!("⏸️ [CALL:{}] Playback finalizado - Media Streams activo, sin iniciar transcripción Telnyx", call_control_id);
+    } else if let Some(mut session) = state.sessions.get_mut(&call_control_id) {
         if !session.transcription_started {
             info!("🎙️ [CALL:{}] Iniciando transcripción después del saludo", call_control_id);
             if let Err(e) = state.telnyx_service.start_transcription(&call_control_id).await {
